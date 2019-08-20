@@ -22,36 +22,5 @@ projects:
   exclude:
     archived: false
     forks: true
-    projects:
-    # - repo-name
-
-social_media:
-  # behance: your_username
-  # dribbble: your_username
-  # facebook: your_username
-  # hackerrank: your_username
-  # instagram: your_username
-  # keybase: your_username
-  # linkedin: your_username
-  # mastodon: your_username
-  # medium: your_username
-  # stackoverflow: your_user_id
-  # telegram: your_username
-  # twitter: nyxtom
-  # unsplash: your_username
-  # vk: your_username
-  # website: http://your_website_url
-  # youtube: your_username
-
-topics:
-  - name: Go
-    web_url: https://github.com/topics/go
-    image_url: https://raw.githubusercontent.com/github/explore/80688e429a7d4ef2fca1e82350fe8e3517d3494d/topics/go/go.png
-
-  - name: Deep Learning
-    web_url: https://github.com/topics/deeplearning
-
-  - name: Gaming
-    web_url: https://github.com/topics/gaming
 
 theme: jekyll-theme-minimal
