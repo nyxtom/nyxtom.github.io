@@ -25,8 +25,9 @@ So what is intuition exactly around a field like say trigometry? Developing an i
 * actions are interactions with and manipulations of internalized and external information (derived from observation)
 * fundamental axioms and suppositions are derived from observing repeatable resolvable experiments
 
-When the worldview is setup in this way, it follows that someone is bound to utilize that framework in the generation of a new kind of abstraction, thus creating a formal way of understanding measurements, shapes, the relationship of different points along those measurements...etc
-* Euclid's elements is a logical framework derived from interacting and measuring the world and approximate shapes the seem to regularly show up
+When the worldview is setup in this way, it follows that someone is bound to utilize that framework in the generation of a new kind of abstraction, thus creating a formal way of understanding measurements, shapes, as well as the relationship of different points along those measurements.
+
+* Euclid's elements, as an example, is a logical framework derived from interacting and measuring the world and approximate shapes the seem to regularly show up. While other mathematicians may have stated similar formula, the derivation of these axioms coming out of a logical deduction framework is what made this work foundational. It builds on intuition.
 
 I can appreciate the work of Euclid, and that of Einstein, because the fields are generated precisely out of the realization and application of formalized logic and developing intuition. A great reason many might understand some of Einstein's work is precisely due to his way of imagining vivid scenarios that most of our minds are well equipped to handle. If most of our brain has been dedicated to visual processing, then it might follow that the way to present knowledge is most effective through visual but more importantly **relatable** analogies.
 
