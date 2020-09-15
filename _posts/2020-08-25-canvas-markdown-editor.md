@@ -3,13 +3,12 @@ title: Drawing and editing markdown text with canvas
 published: true
 description: We will use the canvas api and some very basic parsing to write a simple text editor
 tags: [javascript,tutorial,webdev]
-cover_image: https://dev-to-uploads.s3.amazonaws.com/i/f9ft70y9u3qffbj09nf1.png
 series: Writing a canvas markdown editor
 ---
 
-![COVER](https://dev-to-uploads.s3.amazonaws.com/i/f9ft70y9u3qffbj09nf1.png)
+![COVER](/assets/f9ft70y9u3qffbj09nf1.png)
 
-This last week I've been mucking about with the [canvas api](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Basic_usage). I've put together some visualizations and went through my old content on [p5.js](https://dev.to/nyxtom/flow-fields-and-noise-algorithms-with-p5-js-5g67) (where I go into length on flow fields and noise algorithms: check it out, I really enjoyed that one).
+This last week I've been mucking about with the [canvas api](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Basic_usage). I've put together some visualizations and went through my old content on [p5.js](/2019/08/18/noise/) (where I go into length on flow fields and noise algorithms: check it out, I really enjoyed that one).
 
 In my playing around I've been putting together some ideas around graphing tools and decided one of the most basic things users need in a graph tool is the ability to type in a text input. There are a number of ways to do this, including overlaying HTML on top of a canvas drawing surface (or using [d3.js](https://d3js.org/)). Instead, I chose to just write a simple script that uses the existing canvas api. Like all things, there is more to it than meets the eye, but if you're just trying to get things started - well, here we go.
 
@@ -177,7 +176,7 @@ function draw() {
 }
 ```
 
-![Editor](https://dev-to-uploads.s3.amazonaws.com/i/dyuik5kja6mej2wbljn6.gif)
+![Editor](/assets/dyuik5kja6mej2wbljn6.gif)
 
 In the above code here, we are using the canvas api's [**measureText**](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/measureText). There are alternative methods to measuring text here if we want to be even more precise such as offloading the text into another dom element using the [getBoundingBoxClientRect](https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect). I've chosen the canvas method for now as we will end up taking advantage of the rendering context below to make additional measurements.
 
@@ -244,7 +243,7 @@ function draw() {
 
 Notice, that we have moved the **measureText** code into the code right before we actually attempt to draw it. This is because we have changed the rendering context on the line prior to it with the `context.font = item.font`. We want to be sure we make the right measurements based on the current rendering context.
 
-![Markdown](https://dev-to-uploads.s3.amazonaws.com/i/46y3u1iphpopsunhfbkq.gif)
+![Markdown](/assets/46y3u1iphpopsunhfbkq.gif)
 
 ## Conclusion
 

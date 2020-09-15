@@ -7,9 +7,9 @@ cover_image: https://dev-to-uploads.s3.amazonaws.com/i/921vq7fsqijespi24rdu.png
 series: Writing a canvas markdown editor
 ---
 
-![COVER](https://dev-to-uploads.s3.amazonaws.com/i/921vq7fsqijespi24rdu.png)
+![COVER](/assets/921vq7fsqijespi24rdu.png)
 
-If you read my post on "[How to write a basic markdown editor with canvas](https://dev.to/nyxtom/how-to-write-a-basic-markdown-editor-with-canvas-and-vanilla-javascript-5h95)", you should now have a basic way to write some text and headings into a canvas-rendered editor. In this post, we're going to continue our work with the canvas api to add support for embedding code blocks. We'll make use of a few more canvas functions to render some custom shapes and refactor our code to support multiple types of rendering.
+If you read my post on "[How to write a basic markdown editor with canvas](/2020/08/25/canvas-markdown-editor/)", you should now have a basic way to write some text and headings into a canvas-rendered editor. In this post, we're going to continue our work with the canvas api to add support for embedding code blocks. We'll make use of a few more canvas functions to render some custom shapes and refactor our code to support multiple types of rendering.
 
 ## Drawing shapes in canvas
 
@@ -54,7 +54,7 @@ context.arc(100, 75, 50, 0, 2 * Math.PI);
 context.stroke();
 ```
 
-![Circle](https://dev-to-uploads.s3.amazonaws.com/i/lztpb2982z63wv7jj0sl.png)
+![Circle](/assets/lztpb2982z63wv7jj0sl.png)
 
 In addition to arc, we also have the [ellipse](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/ellipse) method:
 
@@ -164,7 +164,7 @@ function renderText(token, offset) {
 }
 ```
 
-![Rendering](https://dev-to-uploads.s3.amazonaws.com/i/8v3emxqt9si1kmhjnbzl.gif)
+![Rendering](/assets/8v3emxqt9si1kmhjnbzl.gif)
 
 The rendering text is mostly the same as before in the previous article, and now I'm simply rendering the code as regular text. Notice also how we can backspace to the code and re-edit what we were working on! This is because the render code is working with the tokens while the input is working with the raw text. Pretty neat!
 
@@ -213,7 +213,7 @@ function renderCode(token, offset) {
 }
 ```
 
-![Code Block](https://dev-to-uploads.s3.amazonaws.com/i/sxpquofvdzueya5vyehw.gif)
+![Code Block](/assets/sxpquofvdzueya5vyehw.gif)
 
 That's it!
 
