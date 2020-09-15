@@ -1,5 +1,5 @@
 ---
-title: Intro to CRDTs / Realtime Collaboration
+title: CRDTs and Realtime Collaboration
 published: true
 description: Going down the rabbit hole of CRDTs and Realtime Collaborative Academic Papers
 tags: [crdt,computerscience]
