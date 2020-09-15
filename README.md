@@ -25,7 +25,7 @@ Cheers 🍻
 
 ## 🗒 Resume
 
-If you're looking for my [resume](/resume.pdf), feel free to download that in the link.
+If you're looking for my [resume](/assets/resume.pdf), feel free to download that in the link.
 
 ## 🚀 Side Projects
 
