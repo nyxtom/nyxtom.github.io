@@ -7,6 +7,8 @@ cover_image: https://dev-to-uploads.s3.amazonaws.com/i/f9ft70y9u3qffbj09nf1.png
 series: Writing a canvas markdown editor
 ---
 
+![COVER](https://dev-to-uploads.s3.amazonaws.com/i/f9ft70y9u3qffbj09nf1.png)
+
 This last week I've been mucking about with the [canvas api](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Basic_usage). I've put together some visualizations and went through my old content on [p5.js](https://dev.to/nyxtom/flow-fields-and-noise-algorithms-with-p5-js-5g67) (where I go into length on flow fields and noise algorithms: check it out, I really enjoyed that one).
 
 In my playing around I've been putting together some ideas around graphing tools and decided one of the most basic things users need in a graph tool is the ability to type in a text input. There are a number of ways to do this, including overlaying HTML on top of a canvas drawing surface (or using [d3.js](https://d3js.org/)). Instead, I chose to just write a simple script that uses the existing canvas api. Like all things, there is more to it than meets the eye, but if you're just trying to get things started - well, here we go.
