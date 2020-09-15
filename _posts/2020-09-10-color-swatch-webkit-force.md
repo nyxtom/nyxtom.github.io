@@ -6,8 +6,6 @@ tags: [javascript,tutorial,webdev]
 series: Realtime collaborative drawing with canvas and WebRTC
 ---
 
-![COVER](/assets/akfa09vndrna72umogaa.gif)
-
 I promised to give our [drawing tool in canvas](/2020/09/08/collaborative-drawing-sse-webrtc/) an upgrade, so let's get a look at that now. There's a few things that it currently doesn't allow such as:
 
 * Switching colors
