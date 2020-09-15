@@ -1,5 +1,5 @@
 ---
-title: Drawing and editing markdown text with canvas
+title: Drawing markdown in canvas
 published: true
 description: We will use the canvas api and some very basic parsing to write a simple text editor
 tags: [javascript,tutorial,webdev]

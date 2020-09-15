@@ -1,5 +1,5 @@
 ---
-title: Tokenizing markdown and drawing code blocks in canvas
+title: Tokenizing markdown for canvas
 published: true
 description: Where we extend our basic markdown editor to add support for simple code blocks
 tags: [javascript,tutorial,webdev]
