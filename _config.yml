@@ -43,5 +43,8 @@ kramdown:
   smart_quotes: lsquo,rsquo,ldquo,rdquo
   enable_coderay: false
 
+colors:
+  link: '#54B3C8'
+
 sass:
   style: compressed
