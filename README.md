@@ -3,7 +3,20 @@ layout: start
 permalink: /
 ---
 
-🏕 Tom's Notes
+{% raw %}
+<style type="text/css">
+.logo {
+    color: #000;
+    border-bottom: none;
+}
+.logo:hover {
+    background-color: transparent;
+    color: #666;
+}
+</style>
+{% endraw %}
+
+<a href="/" class="logo">🏕 Tom's Notes</a>
 
 {% raw %}
 <script type="text/javascript" src="/assets/packages/particles.js/particles.min.js"></script>
