@@ -276,7 +276,7 @@ function key(e) {
 
 What about combining them at the same time? To do this, we'll need to change our keys for force changes to something like **SHIFT** and **ALT**. We still want to be able to control with the up/down arrows and we want to limit shift/alt to only when left or right is pressed.
 
-```
+```javascript
     if (mouseDown && (e.key === 'ArrowUp' || (e.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(e.key)))) {
         force += 0.025;
     }
