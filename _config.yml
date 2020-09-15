@@ -10,8 +10,8 @@ twitter:
   username: nyxtom
 imprint_url: /assets/resume.pdf
 license_url: https://creativecommons.org/licenses/by-nc/4.0/
-feedback_url: https://github.com/nyxtom/nyxtom/issues/new
-repository_url: https://github.com/nyxtom/nyxtom
+feedback_url: https://github.com/nyxtom/nyxtom.github.io/issues/new
+repository_url: https://github.com/nyxtom/nyxtom.github.io
 remote_theme: nyxtom/jekyll-theme-scribbles
 
 permalink: /:year/:month/:day/:title/
