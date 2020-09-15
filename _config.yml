@@ -8,6 +8,7 @@ author: &default_author
   github: nyxtom
 twitter:
   username: nyxtom
+imprint_url: /resume.pdf
 license_url: https://creativecommons.org/licenses/by-nc/4.0/
 feedback_url: https://github.com/nyxtom/nyxtom/issues/new
 repository_url: https://github.com/nyxtom/nyxtom
@@ -22,6 +23,7 @@ defaults:
       type: "posts"
     values:
       layout: "post"
+      author: *default_author
 
 projects:
   sort_by: stars
@@ -29,6 +31,17 @@ projects:
   exclude:
     archived: false
     forks: true
+
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  auto_ids: true
+  footnote_nr: 1
+  entity_output: as_char
+  toc_levels: 1..6
+  smart_quotes: lsquo,rsquo,ldquo,rdquo
+  enable_coderay: false
 
 sass:
   style: compressed
