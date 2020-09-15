@@ -1,12 +1,12 @@
 ---
-title: How to build a product without much design background
+title: Product Design
 published: true
 description: Designing a SaaS product without much design assets skills
 tags: [productivity,webdev,startup]
 cover_image: https://dev-to-uploads.s3.amazonaws.com/i/szk7gxo9eojbrpc3c184.png
 ---
 
-![COVER](https://dev-to-uploads.s3.amazonaws.com/i/szk7gxo9eojbrpc3c184.png)
+![COVER](https://dev-to-uploads.s3.amazonaws.com/i/szk7gxo9eojbrpc3c184.png) <!-- .element height="50%" width="50%" -->
 
 I've been thinking for a while now that one of the sort of limiting factors in development is being able to have some design assets just on the ready. Lucky for us, there are many resources out there already that you can take advantage of to build off of. I have some designer friends that might cringe at using these tools over their own work, but sometimes you just need to get something out the door *now*. Note, I am not sponsored by any of these services. I've bought some of them definitely and had good experiences.
 
