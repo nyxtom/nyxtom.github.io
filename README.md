@@ -5,6 +5,17 @@ permalink: /
 
 🏕 Tom's Notes
 
+{% raw %}
+<script type="text/javascript" src="/assets/packages/particles.js/particles.min.js"></script>
+<div id="particles-js" style="height: 200px;">
+</div>
+<script type="text/javascript">
+    particlesJS.load('particles-js', '/assets/packages/particles.js/particles.json', function() {
+        console.log('loaded!');
+    });
+</script>
+{% endraw %}
+
 # About
 
 Hi! 👋 You've arrived here either of your own choosing, or you found a reference possibly somewhere on the interweb. In any case, this is my
