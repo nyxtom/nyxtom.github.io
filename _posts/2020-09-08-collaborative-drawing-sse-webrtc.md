@@ -111,6 +111,7 @@ Then in our **static** directory we have:
 ```
 
 * **/static/index.css**
+
 ```css
 :root {
     --root-font-size: 12px;
