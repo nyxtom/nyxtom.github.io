@@ -54,7 +54,7 @@ A few definitions:
 
 Getting events/actions/operations to be in the right order means we need some kind of scheme for timing. We have several ways to do this:
 
-#### **Server Timestamp**
+### **Server Timestamp**
 
 We can use the *server*'s timestamp in a typical architecture to serve as the authoritative clock but this isn't available in distributed systems. Furthermore, if we tried to use the different timestamps that are on each of the different nodes we also run into the problem of *clock drift*.
 
@@ -81,7 +81,7 @@ All processes start at 0 as the root timestamp. In this example, *P1* will incre
 
 *P1* sends another message to *P2* and does so by incrementing its now local timestamp again from 1 to *2*. *P2* receives this message and must take the `Max(0, 2) + 1` which is *3*. *P2* sends a message to *P1* and must increment its local timestamp from 3 to *4*. *P1* receives this message and takes the `Max(2, 4) + 1` which is *5*. Doing this kind of ordering helps us get closer to **total ordering**.
 
-#### **Event Logs**
+### **Event Logs**
 
 In enterprise circles, this is typically called [**event sourcing**](https://martinfowler.com/eaaDev/EventSourcing.html), where every operation is stored as data and playback is used when you need to construct the model.
 
@@ -93,13 +93,13 @@ Given that we have a complete timeline of all the operations that ever occurred 
 
 Given that the focus of our problem is how to prevent inconsistencies between different sites, we need an approach that makes it mathematically always possible to merge and resolve concurrent updates without conflicts. CRDTs provide us with **strong eventual consistency** and there are two approaches:
 
-#### **State-based CRDTs** (**CvRDTs**)
+### **State-based CRDTs** (**CvRDTs**)
 
 State based CRDTs send their full local state to other sites. Merging is done by a function which must be **commutative**, **associative**, and it must be **idempotent**. An *update* also must **monotonically increase** the internal state, which is to say that the state always grows, even with deletions.
 
 > A good example of CvRDTs is in **gossip protocols** where the state of a replica is propagated and merged with other replicas when topologies change and help reduce network use when these states change.
 
-#### **Operation-based CRDTs** (**CmRDTs**)
+### **Operation-based CRDTs** (**CmRDTs**)
 
 Operation based CRDTs, as the name implies, only require sites to exchange the operations themselves. Operations are **commutative**, but they are not necessarily **idempotent**. This means that infrastructure must take into account that all operations on a site are delivered without duplication, but can be in any order. Because a deletion is just a placeholder (called a **tombstone**), an operation can always commute. This means something like the example in the figure where **Site 1** deletes `MD` still translates fine to changes made on other sites since the characters are never *really gone*.
 
@@ -122,7 +122,7 @@ But the most important question you should be asking:
 
 > What are actual real-word performance and usability characteristics based on the intended usage of the application?
 
-#### Figma
+### Figma
 
 Consider how [Figma](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/) makes these tradeoffs by combining multiple CRDT-inspired techniques (**associativity**, **commutativity**, **idempotent**) with a *last-write-wins* (LWW) approach and a central server to coordinate some aspects of conflicts and updates.
 
@@ -148,7 +148,7 @@ At the end of the day, what we are ultimately working with is a set of **shared*
 > Merging is a union of the add sets and union of remove sets. When timestamps are equal, *bias* can be towards either add or remove.
 > Advantage over *2P-Set* is that elements can be reinserted after removal.
 
-#### Note on LWW Sets + Garbage Collection
+### Note on LWW Sets + Garbage Collection
 
 There is a trick that [Roshi](https://github.com/soundcloud/roshi) (a distributed LWW-Set cluster built on top of Redis) that you can add which is garbage collecting on inserts. The trick is to garbage collect whatever item is in the existing *add set* or *remove set* depending on the incoming timestamp.
 
@@ -191,10 +191,6 @@ Ordered sequence, list, or even trees are considered part of the family of *sequ
 There is *a lot* of literature out there. Having spent the time to look through these solutions the best one I've come across so far is [YJS](https://github.com/yjs/yjs/blob/master/README.md#Yjs-CRDT-Algorithm). I interacted for a bit with the author over twitter and the author has a series of [benchmarks](https://github.com/dmonad/crdt-benchmarks) designed around actual real-world editing/conflicts and other specific scenarios that are ideal for comparing implementations.
 
 Even still, these solutions are not a catch all and they all have pitfalls and bottlenecks/edge cases that haven't been fully sorted out. Splicing for instance [remains a problem](https://lord.io/blog/2019/splicing-crdts/) in CRDT and there doesn't seem to be a decent solution for it just yet.
-
-In any case, I learned quite a bit and hopefully you did/will to!
-
-Cheers! 🍻
 
 For additional resources on CRDTs:
 
