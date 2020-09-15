@@ -148,7 +148,7 @@ At the end of the day, what we are ultimately working with is a set of **shared*
 > Merging is a union of the add sets and union of remove sets. When timestamps are equal, *bias* can be towards either add or remove.
 > Advantage over *2P-Set* is that elements can be reinserted after removal.
 
-### Note on LWW Sets + Garbage Collection
+**Note on LWW Sets + Garbage Collection**
 
 There is a trick that [Roshi](https://github.com/soundcloud/roshi) (a distributed LWW-Set cluster built on top of Redis) that you can add which is garbage collecting on inserts. The trick is to garbage collect whatever item is in the existing *add set* or *remove set* depending on the incoming timestamp.
 
