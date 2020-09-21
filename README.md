@@ -42,6 +42,7 @@ If you're looking for my [resume](/assets/resume.pdf), feel free to download tha
 
 ## 🚀 Side Projects
 
+* **[drawing-webrtc](https://github.com/nyxtom/drawing-webrtc)**: Realtime Collaborative Drawing with WebRTC and Canvas
 * **[salient](https://github.com/nyxtom/salient)**: Machine Learning, Natural Language Processing and Sentiment Analysis Toolkit
 * **[reconcile.js](https://github.com/nyxtom/reconcile)**: Simple reconciliation/diff/merge implementation for the DOM
 * **[dive](https://github.com/nyxtom/dive)**: Various standard scuba diving algorithms, formulas, calculations
