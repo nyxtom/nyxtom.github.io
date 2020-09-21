@@ -6,6 +6,11 @@ tags: [javascript,tutorial,webdev,nodejs]
 series: Realtime collaborative drawing with canvas and WebRTC
 ---
 
+* [Part 1: Realtime collaborative drawing with canvas and WebRTC](/2020/09/05/collaborative-drawing-webrtc-canvas/)
+* [Part 2: Server Sent Events + WebRTC Mesh Networks](/2020/09/08/collaborative-drawing-sse-webrtc/)
+* [Part 3: Simulating webkit force, canvas color swatches](/2020/09/10/color-swatch-webkit-force/)
+* **Part 4: Redis PubSub + WebRTC Signaling**
+
 In any system that involves real-time communication, open connections, and messages that need to be routed among peers - you tend to run into the problem that not all of your connections will be able to run on a single server. What we need to do, instead, is setup a system that can route messages to any number of servers maintaining any number of connections.
 
 In a previous article, our [drawing program](/2020/09/08/collaborative-drawing-sse-webrtc/) was recently refactored to use [server sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format) by maintaining a connection open. However, if we introduced another web server to create some load balancing, we run into the problem that the client connections may not be accessible across servers.

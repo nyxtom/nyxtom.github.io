@@ -6,6 +6,11 @@ tags: [javascript,nodejs,tutorial,webdev]
 series: Realtime collaborative drawing with canvas and WebRTC
 ---
 
+* **Part 1: Realtime collaborative drawing with canvas and WebRTC**
+* [Part 2: Server Sent Events + WebRTC Mesh Networks](/2020/09/08/collaborative-drawing-sse-webrtc/)
+* [Part 3: Simulating webkit force, canvas color swatches](/2020/09/10/color-swatch-webkit-force/)
+* [Part 4: Redis PubSub + WebRTC Signaling](/2020/09/15/redis-pubsub-drawing/)
+
 This last week I spent some time with my daughter working on a drawing program. I was showing her how computational thinking works by first thinking in terms of breaking down the problem (Problem Decomposition). This makes up one of the four pillars of [computational thinking](https://en.wikipedia.org/wiki/Computational_thinking).
 
 * Problem Decomposition
@@ -543,3 +548,7 @@ var color = randomColor();
 ```
 
 ![Draw Together](/assets/v0m78s45eb4xuyubkm2m.gif)
+
+Check out the next part in the series:
+
+[Part 2: Server Sent Events + WebRTC Mesh Networks](/2020/09/08/collaborative-drawing-sse-webrtc/)

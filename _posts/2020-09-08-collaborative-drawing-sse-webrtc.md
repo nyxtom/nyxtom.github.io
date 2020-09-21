@@ -8,6 +8,11 @@ series: Realtime collaborative drawing with canvas and WebRTC
 
 ![Collaborative Drawing](/assets/yvkqiiemiincjtl0vd52.gif)
 
+* [Part 1: Realtime collaborative drawing with canvas and WebRTC](/2020/09/05/collaborative-drawing-webrtc-canvas/)
+* **Part 2: Server Sent Events + WebRTC Mesh Networks**
+* [Part 3: Simulating webkit force, canvas color swatches](/2020/09/10/color-swatch-webkit-force/)
+* [Part 4: Redis PubSub + WebRTC Signaling](/2020/09/15/redis-pubsub-drawing/)
+
 In a previous article, we created a [realtime collaborative drawing tool with canvas and webrtc](/2020/09/05/collaborative-drawing-webrtc-canvas/). We used [simplepeer](https://github.com/feross/simple-peer) to get the job done and used [WebSocket](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) to communicate to a signaling server.
 
 This works great, but it sort of *glosses over* the underlying implementation with some added abstractions and complexity that may not be necessary. We can simplify things by using [SSE](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events). As well, we'll take a closer look at WebRTC by utilizing the [RTCPeerConnection](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection) directly.
@@ -746,3 +751,7 @@ Phew! We may have done a bit more in this tutorial. We learned about *Server Sen
 In the next article, we're going to add a few more tools other than the brush and learn a bit about state synchronization. Currently, our drawing state is simply overlayed by executing every operation we receive - but there is nothing that tells us what the state of the drawing surface is when we load the page. We will take a look at how to utilize CRDTs to fix this kind of distributed problem.
 
 In a future article, we will revisit the architecture and add in a [PubSub](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern) server using [Redis](https://redis.io/). Adding a PubSub server will allow us to create a load balancer and any number of deployed signaling servers with our connections (thus helping us scale).
+
+Check out the next part in the series:
+
+[Part 3: Simulating webkit force, canvas color swatches](/2020/09/10/color-swatch-webkit-force/)

@@ -6,6 +6,11 @@ tags: [javascript,tutorial,webdev]
 series: Realtime collaborative drawing with canvas and WebRTC
 ---
 
+* [Part 1: Realtime collaborative drawing with canvas and WebRTC](/2020/09/05/collaborative-drawing-webrtc-canvas/)
+* [Part 2: Server Sent Events + WebRTC Mesh Networks](/2020/09/08/collaborative-drawing-sse-webrtc/)
+* **Part 3: Simulating webkit force, canvas color swatches**
+* [Part 4: Redis PubSub + WebRTC Signaling](/2020/09/15/redis-pubsub-drawing/)
+
 I promised to give our [drawing tool in canvas](/2020/09/08/collaborative-drawing-sse-webrtc/) an upgrade, so let's get a look at that now. There's a few things that it currently doesn't allow such as:
 
 * Switching colors
@@ -284,3 +289,7 @@ What about combining them at the same time? To do this, we'll need to change our
 ```
 
 ![Pressure and Color](/assets/d0byzjtlep5qfnoqurk2.gif)
+
+Check out the next part in the series:
+
+[Part 4: Redis PubSub + WebRTC Signaling](/2020/09/15/redis-pubsub-drawing/)
