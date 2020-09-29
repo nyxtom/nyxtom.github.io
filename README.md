@@ -16,7 +16,7 @@ permalink: /
 </style>
 {% endraw %}
 
-<a href="/" class="logo">🏕 Tom's Notes</a>
+<a href="/" class="logo">Tom's Notes🏕</a>
 
 {% raw %}
 <script type="text/javascript" src="/assets/packages/particles.js/particles.min.js"></script>
@@ -31,16 +31,16 @@ permalink: /
 
 # About
 
-Hi! 👋 You've arrived here either of your own choosing, or you found a reference possibly somewhere on the interweb. In any case, this is my
-personal website of my notes and articles. I tend towards computer science, occasionally write about physics, neuroscience, philosophy, psychology, and every now and then I will muse about my personal goals. You might find some of them useful, some interesting, and some not so much. That's okay. They are mostly for me, but I do like to write with the intent that it will be helpful for other people.
+Hello, I am a programmer by trade, science educator to my daughter, a runner, and I enjoy all things in nature. This site is my personal website where I discuss my thoughts on computer science, projects I'm experimenting with, and occasional philosphical musings on life. Every now and then I will publish a goals update to keep things up to pace (setting goals in public).
 
-Cheers 🍻
+I've worked as a programmer professionally for over 10+ years in data science, medical information processing, social analytics, devops, and realtime collaborative editors. I've taken courses on Machine Learning, Brain Science, and Signal Processing (my personal favorite course I've taken on Coursera includes [Signals, Neurons, and Brains](https://www.coursera.org/learn/synapses) and [Machine Learning](https://www.coursera.org/learn/machine-learning)). Feel free to browse around my work below!
 
-## 🗒 Resume
+
+## Resume
 
 If you're looking for my [resume](/assets/resume.pdf), feel free to download that in the link.
 
-## 🚀 Side Projects
+## Side Projects
 
 * **[drawing-webrtc](https://github.com/nyxtom/drawing-webrtc)**: Realtime Collaborative Drawing with WebRTC and Canvas
 * **[salient](https://github.com/nyxtom/salient)**: Machine Learning, Natural Language Processing and Sentiment Analysis Toolkit
