@@ -13,6 +13,11 @@ permalink: /
     background-color: transparent;
     color: #666;
 }
+#particles-js {
+    width: calc(100% + 8rem);
+    margin-left: -4rem;
+    margin-top: 4rem;
+}
 </style>
 {% endraw %}
 
@@ -24,7 +29,6 @@ permalink: /
 </div>
 <script type="text/javascript">
     particlesJS.load('particles-js', '/assets/packages/particles.js/particles.json', function() {
-        console.log('loaded!');
     });
 </script>
 {% endraw %}
