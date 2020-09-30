@@ -6,6 +6,7 @@ author: &default_author
   name: Tom Holloway
   twitter: nyxtom
   github: nyxtom
+  followit: nyxtom
 twitter:
   username: nyxtom
 imprint_url: /assets/resume.pdf
