@@ -52,3 +52,7 @@ If you're looking for my [resume](/assets/resume.pdf), feel free to download tha
 * **[viterbi](https://github.com/nyxtom/viterbi)** viterbi path finding algorithm go library used for trigram HMM
 * **[runs](https://github.com/nyxtom/runs)**: Latest run data exported from strava, manipulation with gpx data
 * **[synth](https://github.com/nyxtom/synth)**: [Active WIP] project for playing with Web Audio and Signal Processing
+
+## Books
+
+* **[Cross-Platform Graphics Programming with WGPU](/2020/10/10/books-wgpu/)**
