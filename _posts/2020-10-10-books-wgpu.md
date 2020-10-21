@@ -830,7 +830,9 @@ The last step, is to update the **render** function to set the active render pip
 
 ![Draw Triangle Shader](/assets/wgpu-draw-triangle-shader.png)
 
-### 2.6 Shader Uniforms
+## 3 Shader Uniforms
+
+### 3.1 GLSL Uniforms
 
 > A uniform is a global shader variable declared with the **uniform** qualifier. These are parameters that must be passed into the shader program during the pipeline execution. A uniform value does not change from one shader invocation to the next within a rendering call so they remain *uniform* among all invocations.
 
@@ -912,9 +914,174 @@ void main() {
 }
 ```
 
-### 2.7 Push Constants
+### 3.2 Push Constants
 
-### 2.8 Example: Set current timestep
+As noted in the previous section, one method of assigning **uniform** data into a shader is to use a concept known as **push constants**. While, this method is not supported on WebGPU (for instance), it is a method that is used quite regularly to pass along small variables or indices used to describe dynamic offsets for memory backed resources. WGPU provides this native extension through the use of the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature that can setup at the time when device initialization occurs.
+
+```rust
+let (device, queue) = adapter.request_device(
+    &wgpu::DeviceDescriptor {
+        features: wgpu::Features::PUSH_CONSTANTS,
+        limits: wgpu::Limits {
+            max_push_constant_size: 128,
+            ..wgpu::Limits::default()
+        },
+        shader_validation: true
+    },
+    None
+).await.unwrap();
+```
+
+When you specify the additional [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) at the time of requesting a logical device, you must also specify the **max_push_constant_size**. The [max_push_constant_size](https://docs.rs/wgpu/0.6.0/wgpu/struct.Limits.html#structfield.max_push_constant_size) available depends on the target platform such as 128-256 bytes for Vulkan, 256 bytes for D3D12, Metal 4KB.
+
+```rust
+let render_pipeline_layout = device.create_pipeline_layout(
+    &wgpu::PipelineLayoutDescriptor {
+        label: Some("pipeline layout"),
+        bind_group_layouts: &[],
+        push_constant_ranges: &[wgpu::PushConstantRange {
+            stages: wgpu::ShaderStage::FRAGMENT,
+            range: 0..4
+        }]
+    }
+);
+```
+
+After specifying the push constants feature and max push constant size, for each render pipeline layout you must specify the range of constants that the pipeline will use. This is specified through the [wgpu::PushConstantRange](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayoutDescriptor.html#structfield.push_constant_ranges). Each stage that uses push constants must define the range in push constant memory that corresponds to a single **layout(push_constant) uniform BLOCK {}**.
+
+Finally, when you are ready to pass along these variables to the shader stage, call the [wgpu::RenderPass::set_push_constants](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_push_constants) - passing along the offset, [wgpu::ShaderStage](https://docs.rs/wgpu/0.6.0/wgpu/struct.ShaderStage.html) and byte data.
+
+```rust
+render_pass.set_push_constants(
+    wgpu::ShaderStage::FRAGMENT, 
+    0, 
+    bytemuck::cast_slice(&[self.u_time])
+);
+```
+
+### 3.3 Example: Set current timestep
+
+Using the **push_constant uniform** block and the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature in wgpu, we can create a simple example that passes along the current timestep and manipulate the fragment shader color in the process. This builds off of the same triangle example in a previous section.
+
+Within the **new** function during initialization, we need to update the logical device to include the push constants feature mentioned in the previous section, as well as specify the maximum push constant size in bytes.
+
+```rust
+// ...
+impl State {
+    async fn new(window: &Window) -> Self {
+        // ... size, instance, surface, adapter
+        let (device, queue) = adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                features: wgpu::Features::PUSH_CONSTANTS,
+                limits: wgpu::Limits {
+                    max_push_constant_size: 128,
+                    ..wgpu::Limits::default()
+                },
+                shader_validation: true
+            },
+            None
+        ).await.unwrap();
+        // ...
+    }
+    // ..resize, render
+}
+// ...
+```
+
+Next, during initialization the code setup a simple render pipeline layout that loaded the two shaders **shader.vert** and **shader.frag**. Recall the implementation for the **shader.vert** vertex shader.
+
+```glsl
+#version 450
+
+const vec2 positions[3] = vec2[3](
+    vec2(0.0, 0.5),
+    vec2(-0.5, -0.5),
+    vec2(0.5, -0.5)
+);
+
+void main() {
+    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+}
+```
+
+In the fragment shader, we will update it to include a new **layout(push_constant) uniform** block to allow us to specify a simple timestep float.
+
+```glsl
+#version 450
+
+layout(location=0) out vec4 f_color;
+layout(push_constant) uniform Uniforms {
+    float u_time;
+};
+
+void main() {
+    f_color = vec4(abs(sin(u_time)), abs(cos(u_time)), 0.4, 1.0);
+}
+```
+
+This fragment shader makes use of one of the many built-in functions in GLSL. Namely, [cos()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/cos.xhtml), [sin()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/sin.xhtml), and [abs()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/abs.xhtml) functions. Next, in our render pipeline - after loading these shader modules - we will make sure to specify that we want this **uniform block** to be available to the fragment shader and the bytes covered will be approximately **0..4** (matching a 32-bit float type: **f32**). Calling [wgpu::Device::create_pipeline_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_pipeline_layout) and specifying a [wgpu::PipelineLayoutDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayoutDescriptor.html#structfield.push_constant_ranges) to include our [wgpu::PushConstantRange](https://docs.rs/wgpu/0.6.0/wgpu/struct.PushConstantRange.html) will do this.
+
+```rust
+// ..
+impl State {
+    async fn new(window: &Window) -> Self {
+        // ... size, instance, surface, adapter, 
+        let (device, queue) = // adapter.request_device..
+        // .. swap chain, compile and load shaders
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("pipeline layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[
+                    &wgpu::PushConstantRange {
+                        stages: wgpu::ShaderStage::FRAGMENT,
+                        range: 0..4
+                    }
+                ]
+            }
+        )
+        let render_pipeline  = // device.create_render_pipeline..
+
+        let u_time: f32 = 0.0;
+
+        Self {
+            // ..surface, device, queue, sc desc, swap chain, size
+            render_pipeline,
+            u_time
+        }
+    }
+    // ..resize, render
+}
+```
+
+Great! Now all we have to do is update our render pass code to actually update and push along our time variable using the [wgpu::RenderPass::set_push_constants](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_push_constants).
+
+```rust
+// ...
+impl State {
+    // ...new, resize
+    fn render(&mut self) {
+        // ..get frame, create command encoder
+        {
+            let mut render_pass = // encoder.begin_render_pass ...
+
+            self.u_time = self.u_time + 0.01;
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_push_constants(
+                wgpu::ShaderStage::FRAGMENT,
+                0,
+                bytemuck::cast_slice(&[self.u_time])
+            );
+            render_pass.draw(0..3, 0..1);
+        }
+
+        // ..queue.submit
+    }
+}
+```
+
+![WGPU Push Constants](/assets/wgpu-uniform-pushconstant.gif)
 
 ## Rust Sections
 
