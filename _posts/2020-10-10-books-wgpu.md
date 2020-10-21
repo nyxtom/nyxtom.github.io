@@ -307,7 +307,7 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut state = block_on(State::new(&window));
+    let mut state = block_on(RenderState::new(&window));
 
     event_loop.run(move |event, _, control_flow| {
         if input.update(&event) {
@@ -338,7 +338,7 @@ fn main() {
     });
 }
 
-struct State {
+struct RenderState {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -347,7 +347,7 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>
 }
 
-impl State {
+impl RenderState {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
@@ -732,6 +732,12 @@ void main() {
 Recall that our previous code for setting up the state included creating everything from the instance, adapter, device, swap chain descriptor, and all the code from the winit event handling. Let's extend the **new** function to also setup the render pipeline we described earlier as well as loading our shader code. Using the same code from [demo - clearing the screen](#demo-18-clearing-the-screen), the following code will extend the **new** function to get the pipeline setup and load the shader code written previously.
 
 ```rust
+struct RenderState {
+    // ..surface, device, queue, swap chain, size
+    render_pipeline: wgpu::RenderPipeline
+}
+
+impl RenderState {
     async fn new(window: &Window) -> Self {
         // .. instance, device, queue, swap chain code
         let mut compiler = shaderc::Compiler::new().unwrap();
@@ -811,11 +817,16 @@ Recall that our previous code for setting up the state included creating everyth
             render_pipeline
         }
     }
+    // ..resize, render
+}
 ```
 
 The last step, is to update the **render** function to set the active render pipeline on the current render pass and call **draw** to draw the vertices of the triangle.
 
 ```rust
+// ..
+impl RenderState {
+    // ..new, resize
     fn render(&mut self) {
         // .. get frame, create command encoder
         {
@@ -826,6 +837,7 @@ The last step, is to update the **render** function to set the active render pip
         }
         // ..queue.submit
     }
+}
 ```
 
 ![Draw Triangle Shader](/assets/wgpu-draw-triangle-shader.png)
@@ -967,7 +979,7 @@ Within the **new** function during initialization, we need to update the logical
 
 ```rust
 // ...
-impl State {
+impl RenderState {
     async fn new(window: &Window) -> Self {
         // ... size, instance, surface, adapter
         let (device, queue) = adapter.request_device(
@@ -1023,7 +1035,7 @@ This fragment shader makes use of one of the many built-in functions in GLSL. Na
 
 ```rust
 // ..
-impl State {
+impl RenderState {
     async fn new(window: &Window) -> Self {
         // ... size, instance, surface, adapter, 
         let (device, queue) = // adapter.request_device..
@@ -1058,7 +1070,7 @@ Great! Now all we have to do is update our render pass code to actually update a
 
 ```rust
 // ...
-impl State {
+impl RenderState {
     // ...new, resize
     fn render(&mut self) {
         // ..get frame, create command encoder
