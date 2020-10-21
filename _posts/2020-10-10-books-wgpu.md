@@ -624,7 +624,7 @@ void main() {
 }
 ```
 
-In the above vertex shader example, we are making use of two reserved variables **gl_Position** and **gl_VertexIndex**. There are other global variables such as **gl_InstanceIndex**. In a later section, when we discuss [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) we will get into how attributes are defined and how a [wgpu::VertexAttributeDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexAttributeDescriptor.html) instructs the pipeline how to get buffer data into the vertex stage. In the above example, however, we are defining the vertices as a constant triangle that goes beyond the bounds of the initial viewport. We can call the **draw** function to indicate we would like all 3 of these vertices and 1 instance to be passed through the vertex stage. The vertex shader will be executed for each vertex index and for each instance of those vertices.
+In the above vertex shader example, we are making use of two reserved variables **gl_Position** and **gl_VertexIndex**. There are other global variables such as **gl_InstanceIndex**. In a later section, when we discuss [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) we will get into how attributes are defined and how a [wgpu::VertexAttributeDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexAttributeDescriptor.html) instructs the pipeline how to get buffer data into the vertex stage. In the above example, however, we are defining the vertices as a constant triangle constructed from 3 vec2 positions. We can call the **draw** function to indicate we would like all 3 of these vertices and 1 instance to be passed through the vertex stage. The vertex shader will be executed for each vertex index and for each instance of those vertices.
 
 ```rust
 render_pass.draw(0..3, 0..1);
@@ -737,16 +737,34 @@ Recall that our previous code for setting up the state included creating everyth
         let mut compiler = shaderc::Compiler::new().unwrap();
         let vs_src = include_str!("shader.vert");
         let fs_src = include_str!("shader.frag");
-        let vs_spirv = compiler.compile_into_spirv(vs_src, shaderc::ShaderKind::Vertex, "shader.vert", "main", None).unwrap();
-        let fs_spirv = compiler.compile_into_spirv(fs_src, shaderc::ShaderKind::Fragment, "shader.frag", "main", None).unwrap();
-        let vs_module = device.create_shader_module(wgpu::util::make_spirv(&vs_spirv.as_binary_u8()));
-        let fs_module = device.create_shader_module(wgpu::util::make_spirv(&fs_spirv.as_binary_u8()));
+        let vs_spirv = compiler.compile_into_spirv(
+            vs_src, 
+            shaderc::ShaderKind::Vertex, 
+            "shader.vert", 
+            "main", 
+            None
+        ).unwrap();
+        let fs_spirv = compiler.compile_into_spirv(
+            fs_src, 
+            shaderc::ShaderKind::Fragment, 
+            "shader.frag", 
+            "main", 
+            None
+        ).unwrap();
+        let vs_module = device.create_shader_module(
+            wgpu::util::make_spirv(&vs_spirv.as_binary_u8())
+        );
+        let fs_module = device.create_shader_module(
+            wgpu::util::make_spirv(&fs_spirv.as_binary_u8())
+        );
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline layout"),
-            bind_group_layouts: &[],
-            push_constant_ranges: &[]
-        });
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("pipeline layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[]
+            }
+        );
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("pipeline"),
@@ -811,6 +829,120 @@ The last step, is to update the **render** function to set the active render pip
 ```
 
 ![Draw Triangle Shader](/assets/wgpu-draw-triangle-shader.png)
+
+### 2.6 Shader Uniforms
+
+> A uniform is a global shader variable declared with the **uniform** qualifier. These are parameters that must be passed into the shader program during the pipeline execution. A uniform value does not change from one shader invocation to the next within a rendering call so they remain *uniform* among all invocations.
+
+Passing data into a shader can be done in one of several ways. You can specify data between shader stages such as assigning output and input bindings from one stage to the next. Shaders, such as vertex shaders, can receive vertex attributes assigned in from vertex buffer objects. Or you can assign in **uniform** buffer data where the uniform value is the same for every execution of that (and in some cases all) stage(s). 
+
+Since a uniform is simply a qualifier, the actual type associated with the value can be of any type, or any aggregation of types such as *bool*, *int*, *uint*, *float*, *double*, *vecN* vectors, *matN* and *matnxm* matrices, samplers, textures and more. 
+
+```glsl
+#version 450
+layout(set=0, binding=0) uniform texture2D tex;
+layout(set=0, binding=1) uniform sampler samp;
+
+layout(location = 1) in vec2 frag_uv;
+
+layout(location = 0) out vec4 color;
+
+void main() {
+    color = texture(sample2D(tex, samp), frag_uv);
+}
+```
+
+Note the use of **set** and **binding** in the above example. The set identifier specifies the **descriptor set** the object belongs to. Within WGPU, descriptor sets are setup using a [wgpu::BindGroupLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayout.html) and are passed along to the [wgpu::PipelineLayoutDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayoutDescriptor.html#structfield.bind_group_layouts). Pipeline layouts, as mentioned in a previous section, are setup at the start of the program right after initialization with the [wgpu::Device::create_pipeline_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_pipeline_layout). 
+
+> We will go over this part in more detail in a later section specifically on bind groups and layouts. Just note that the **set** qualifier is an index we will pass along at the time when a [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html) is actually set on a render pass through [wgpu::RenderPass::set_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_bind_group). While the **binding** qualifier must match the [wgpu::BindGroupEntry::binding](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupEntry.html#structfield.binding), an object that is created whenever we are setting up the bind group layout itself from [wgpu::Device::create_bind_group_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group_layout). 
+
+In order to pass long any resources (whether that's a texture, an image, vectors, matrices, buffer data), each resource must be described in a **descriptor set**. The assignment is a **layout** of (set number, binding number, array element) that defines its location. The **set** number and **binding** number are explicitly provided within the **layout** qualifier as shown in the previous example. The array element is implicitly assigned for each uniform variable specified in the shader.
+
+```glsl
+#version 450
+layout(location=0) out vec4 color;
+layout(push_constant) uniform blockName {
+    float u_time;
+}
+
+void main() {
+    color = vec4(abs(sin(u_time)), abs(cos(u_time)), 1.0, 1.0);
+}
+```
+
+In addition to uniform layout bindings through descriptor sets, you can also specify a uniform block that uses the **push_constant** layout qualifier. Native platforms such as Metal, Vulkan, D3DX, provide a small reserved buffer of memory that can be used to pass along small constants and variables. These variables can be typically updated frequently and can be passed along to to the pipeline without needing to setup an additional binding layout or allocate an intermediary buffer object. Push constants, in Vulkan for instance set this small reserved buffer of memory to have a maximum size (in bytes) has a default limit set to 128 bytes.
+
+> In Metal, this is done through [SetBytes](https://developer.apple.com/documentation/metal/mtlcomputecommandencoder/1443159-setbytes), [SetVertexBytes](https://developer.apple.com/documentation/metal/mtlrendercommandencoder/1515846-setvertexbytes), and [SetFragmentBytes](https://developer.apple.com/documentation/metal/mtlrendercommandencoder/1516192-setfragmentbytes?language=objc). Metal requests the data buffers set by these implementations to be **less than 4KB** and must be one-time-use data buffers in each render.
+
+> In D3D12, this kind of constant is done through the [Root Constants](https://docs.microsoft.com/en-us/windows/desktop/direct3d12/root-signatures-overview) feature and applications can define each as a set of 32-bit values. Typically root constants will be used in scenarios such as [dynamic indexing](https://github.com/Microsoft/DirectX-Graphics-Samples/tree/master/Samples/Desktop/D3D12DynamicIndexing). D3D12 has limits such as the maximum size of a root signature at 64 DWORDS, with root constants costing 1 DWORD each.
+
+> WebGPU however, does not appear to support push constants, and the outlook for them doesn't look promising in terms of implementation any time soon. At the time of this writing, a proposal was in place but the WebGPU group at the moment has not decided on including it into the spec ([issue #75](https://github.com/gpuweb/gpuweb/issues/75)).
+
+In addition to the uniform block with a **push_constant** layout qualifier, you can also specify a uniform block with the **set** and **binding** layout qualifiers that were previously used to assign uniform constants.
+
+```glsl
+#version 450
+
+layout(location=0) in vec3 pos;
+
+layout(set=0, binding=0) uniform UpdateBlock {
+    mat4 cam_view_proj;
+    float u_time;
+}
+
+void main() {
+    gl_Position = cam_view_proj * vec4(pos, 1.0);
+}
+```
+
+Layout blocks can also include an **INSTANCE_NAME** at the end of the block so that variables can be accessed with the *dot notation*.
+
+```glsl
+#version 450
+
+layout(location=0) in vec3 pos;
+
+layout(set=0, binding=0) uniform UpdateBlock {
+    mat4 cam_view_proj;
+    float u_time;
+} updates;
+
+void main() {
+    gl_Position = updates.cam_view_proj * vec4(pos, 1.0);
+}
+```
+
+### 2.7 Push Constants
+
+### 2.8 Example: Set current timestep
+
+## Rust Sections
+
+### drop traits
+
+### mut
+
+### &
+
+### ranges
+
+### some, option, none
+
+### structs, types
+
+### match
+
+### functions -> Self
+
+### unwrap
+
+### macros
+
+### move |
+
+### u_time: f32 = 0.0
+
+### *control_flow = 
 
 ## 3.1 Buffer
 
