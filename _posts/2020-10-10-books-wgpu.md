@@ -1,6 +1,6 @@
 ---
-title: Cross-Platform Graphics Programming with WGPU
-published: false
+title: Rust Graphics Programming with WGPU
+published: true
 book: true
 ---
 
@@ -8,16 +8,22 @@ book: true
 <style type="text/css">
 .hack h2 {
     font-size: 1.4rem;
-    padding-top: 6rem;
+    padding-top: 12rem;
+    padding-bottom: 4rem;
 }
 .hack h3 {
     font-size: 1.2rem;
     padding: 2rem 1rem;
-    padding-top: 6rem;
+    padding-top: 8rem;
 }
 pre {
     margin-top: 3rem;
     margin-bottom: 3rem;
+    margin-left: 1rem;
+    margin-right: 1rem;
+    background-color: #fbfbfb;
+    border: none;
+    border-radius: 8px;
 }
 .hack blockquote {
     margin-top: 3rem;
@@ -26,9 +32,9 @@ pre {
 </style>
 {% endraw %}
 
-After spending significant time going through the documentation and source of [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu) and various [gfx-rs/gfx](https://github.com/gfx-rs/gfx) backends, Vulkan portability layers, the book of shaders, SPIR-V, and all else - I decided I wanted to compile all my notes together into a comprehensive guide to **Cross-Platform Graphics Programming with WGPU**. 
+After spending significant time going through the documentation and source of [gfx-rs/wgpu](https://github.com/gfx-rs/wgpu) and various [gfx-rs/gfx](https://github.com/gfx-rs/gfx) backends, Vulkan portability layers, the book of shaders, SPIR-V, and all else - I decided I wanted to compile all my notes together into a comprehensive guide to **Rust Graphics Programming with WGPU**. 
 
-This guide is a deep dive into WGPU with a high level overview of shader programming in relation to that. It covers a range of topics fundamental to graphics programming including: rendering pipelines, shaders, vertex buffers, textures, sampling, bind layouts, compute pipelines, debugging, cross compilation, target platform builds and more. Along the way, we will use that knowledge to build simple render pipelines and demos to reinforce what we've learned. By the end of the book, we put it all together and build a simple cross platform game with WGPU.
+This guide is a deep dive into WGPU with a high level overview of shader programming in relation to that. It covers a range of topics fundamental to graphics programming including: rendering pipelines, shaders, vertex buffers, instancing, textures, sampling, bind layouts, compute pipelines, debugging, cross compilation, target platform builds and more. Along the way, we will use that knowledge to build simple render pipelines and demos to reinforce what we've learned. By the end of the book, we put it all together and build a simple cross platform game with WGPU.
 
 **Table of Contents**:
 * TOC
@@ -67,6 +73,8 @@ bytemuck = "1.4.1"
 image = "0.23.10"
 shaderc = "0.6.2"
 ```
+
+## 0.3 Event Loop
 
 These dependencies follow into the sample code below for setting up a window with an event loop and handling events:
 
@@ -337,7 +345,12 @@ fn main() {
         }
     });
 }
+```
 
+Recall the code above that sets up the event loop, creates the window, updates the input state, and calls to our render state to either render or resize based on the correct window eventing. Next, we will setup the actual render state to encapsulate all of our initalization objects mentioned in the previous sections.
+
+
+```rust
 struct RenderState {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -346,7 +359,11 @@ struct RenderState {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>
 }
+```
 
+Within the **RenderState** implementation, we need to initialize each of these objects: **wgpu::Instance**, surface, **wgpu:Device**, **wgpu::Queue**, **wgpu::SwapChainDescriptor**, and **wgpu::SwapChain**.
+
+```rust
 impl RenderState {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
@@ -387,6 +404,15 @@ impl RenderState {
             size
         }
     }
+    
+}
+```
+
+Let's add the resize function mentioned previously to handle updating the swap chain descriptor and generate a new swap chain whenever the window is resized.
+
+```rust
+impl RenderState {
+    // .. new
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
@@ -395,14 +421,27 @@ impl RenderState {
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
+}
+```
+
+Finally, the **render** function can be implemented to grab the current frame, create a command encoder, begin a render pass and submit the command buffer to the queue.
+
+```rust
+impl RenderState {
+    // ..new...
+
+    // ..resize...
+    
     fn render(&mut self) {
         let frame = self.swap_chain.get_current_frame()
             .expect("Timeout getting texture")
             .output;
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("RENDER ENCODER") // label in graphics debugger
-        });
+        let mut encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("RENDER ENCODER") // label in graphics debugger
+            }
+        );
 
         {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -731,12 +770,18 @@ void main() {
 
 Recall that our previous code for setting up the state included creating everything from the instance, adapter, device, swap chain descriptor, and all the code from the winit event handling. Let's extend the **new** function to also setup the render pipeline we described earlier as well as loading our shader code. Using the same code from [demo - clearing the screen](#demo-18-clearing-the-screen), the following code will extend the **new** function to get the pipeline setup and load the shader code written previously.
 
+First, since we are going to use the render pipeline when we queue a render pass (within the **render** function). We need to store our render pipeline definition in the **RenderState**.
+
 ```rust
 struct RenderState {
     // ..surface, device, queue, swap chain, size
     render_pipeline: wgpu::RenderPipeline
 }
+```
 
+Next, we are going to import the **shader.vert** and **shader.frag** shaders, compile them with [shaderc::Compiler](https://docs.rs/shaderc/0.6.2/shaderc/struct.Compiler.html) and create a [wgpu::ShaderModule](https://docs.rs/wgpu/0.6.0/wgpu/struct.ShaderModule.html) with [wgpu::Device::create_shader_module](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_shader_module).
+
+```rust
 impl RenderState {
     async fn new(window: &Window) -> Self {
         // .. instance, device, queue, swap chain code
@@ -763,7 +808,21 @@ impl RenderState {
         let fs_module = device.create_shader_module(
             wgpu::util::make_spirv(&fs_spirv.as_binary_u8())
         );
+        // ..
+    }
+}
+```
 
+After creating the shader modules, a [wgpu::RenderPipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPipeline.html) must be created as described in the previous section using [wgpu::Device::create_render_pipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_render_pipeline).
+
+```rust
+// ..
+impl RenderState {
+    async fn new(window: &Window) -> Self {
+        // ..instance, device, queue, swap chain code
+        // ..load and compile shaders
+        let vs_module = // device.create_shader_module..
+        let fs_module = // device.create_shader_module..
         let render_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("pipeline layout"),
@@ -772,45 +831,47 @@ impl RenderState {
             }
         );
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex_stage: wgpu::ProgrammableStageDescriptor {
-                module: &vs_module,
-                entry_point: "main"
-            },
-            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                module: &fs_module,
-                entry_point: "main"
-            }),
-            rasterization_state: Some(
-                wgpu::RasterizationStateDescriptor {
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: wgpu::CullMode::Back,
-                    depth_bias: 0,
-                    depth_bias_slope_scale: 0.0,
-                    depth_bias_clamp: 0.0,
-                    clamp_depth: false
-                } 
-            ),
-            color_states: &[
-                wgpu::ColorStateDescriptor {
-                    format: sc_desc.format,
-                    color_blend: wgpu::BlendDescriptor::REPLACE,
-                    alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                    write_mask: wgpu::ColorWrite::ALL
-                }
-            ],
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            depth_stencil_state: None,
-            vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[]
-            },
-            sample_count: 1,
-            sample_mask: !0,
-            alpha_to_coverage_enabled: false
-        });
+        let render_pipeline = device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                label: Some("pipeline"),
+                layout: Some(&render_pipeline_layout),
+                vertex_stage: wgpu::ProgrammableStageDescriptor {
+                    module: &vs_module,
+                    entry_point: "main"
+                },
+                fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                    module: &fs_module,
+                    entry_point: "main"
+                }),
+                rasterization_state: Some(
+                    wgpu::RasterizationStateDescriptor {
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: wgpu::CullMode::Back,
+                        depth_bias: 0,
+                        depth_bias_slope_scale: 0.0,
+                        depth_bias_clamp: 0.0,
+                        clamp_depth: false
+                    } 
+                ),
+                color_states: &[
+                    wgpu::ColorStateDescriptor {
+                        format: sc_desc.format,
+                        color_blend: wgpu::BlendDescriptor::REPLACE,
+                        alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                        write_mask: wgpu::ColorWrite::ALL
+                    }
+                ],
+                primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+                depth_stencil_state: None,
+                vertex_state: wgpu::VertexStateDescriptor {
+                    index_format: wgpu::IndexFormat::Uint16,
+                    vertex_buffers: &[]
+                },
+                sample_count: 1,
+                sample_mask: !0,
+                alpha_to_coverage_enabled: false
+            }
+        );
 
         Self {
             // ...surface, device, queue, sc_desc, swap_chain, size
@@ -1095,49 +1156,27 @@ impl RenderState {
 
 ![WGPU Push Constants](/assets/wgpu-uniform-pushconstant.gif)
 
-## Rust Sections
+## 4 Resources
 
-### drop traits
-
-### mut
-
-### &
-
-### ranges
-
-### some, option, none
-
-### structs, types
-
-### match
-
-### functions -> Self
-
-### unwrap
-
-### macros
-
-### move |
-
-### u_time: f32 = 0.0
-
-### *control_flow = 
-
-## 3.1 Buffer
+### 4.1 Buffers
 
 > [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) is a blob of data created from the [Device::create_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_buffer) specifying a size, and [wgpu::BufferUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html) stored on the gpu to store anything from graph structures, structs, arrays, vertex data, index data. BufferUsage will limit operations performed on the buffer data and causes a *panic* to throw when used in any way not specified by **BufferInitDescriptor::usage**.
 
-**wgpu** provides a somewhat undocumented api called **create_buffer_init** that is used to create the buffer with data assigned to it. The reason is that the utility method will use a [wgpu::BufferInitDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/util/struct.BufferInitDescriptor.html) to create a **wgpu::BufferDescriptor** and use the device context to effectively allocate a contiguous slice of memory and then copy over the range of data from the contents of the init descriptor. It seems handy to have this kind of utility in the main api but for now it appears to be via a device extension via `use wgpu::DeviceExt` trait.
+Using the [wgpu::Device](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html) it is possible to create a buffer with data initialized onto it using the **create_buffer_init** function. This utility method will use a [wgpu::BufferInitDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/util/struct.BufferInitDescriptor.html) to create a **wgpu::BufferDescriptor** and use the device context to effectively allocate a contiguous slice of memory and then copy over the range of data from the contents of the init descriptor. It seems handy to have this kind of utility in the main api but for now it appears to be via a device extension via `use wgpu::DeviceExt` trait.
 
 ```rust
 use wgpu::DeviceExt;
-use zerocopy::AsBytes;
 
-#[derive(AsBytes)]
 struct Vertex {
     position: [f32; 3],
     color: [f32; 3]
 }
+
+// in order for bytemuck::cast_slice to work 
+// on a struct, we need two traits to be specified
+// bytemuck::Pod and bytemuck::Zeroable
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
 
 const VERTICES: &[Vertex] = &[
     Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
@@ -1147,14 +1186,456 @@ const VERTICES: &[Vertex] = &[
 
 let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
     label: Some('Vertices'), // debug label in graphics debugging
-    contents: VERTICES.as_bytes(), // convert to &[u8]
-    usage: wgpu::BufferUsage::VERTEX // if buffer is used in any way that isn't specified here, operation panics
+    contents: bytemuck::cast_slice(VERTICES), // convert to &[u8]
+    usage: wgpu::BufferUsage::VERTEX
 });
 ```
 
-In the above example, I'm using the [zerocopy](https://crates.io/crates/zerocopy) crate to convert the struct into bytes, but I've seen examples that also use [bytemuck](https://crates.io/crates/bytemuck) if you need to serialize into [u8].
+Another common method for creating buffers, especially in the case of dynamic buffers, is to use the [wgpu::Device::create_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_buffer) directly rather than call [wgpu::DeviceExt::create_buffer_init](https://docs.rs/wgpu/0.6.0/wgpu/util/trait.DeviceExt.html#tymethod.create_buffer_init) and pass in the bytes.
 
-## 2.5 Texture
+```rust
+struct Uniforms {
+    timestep: f32,
+    mouse_pos: [f32; 2]
+}
+let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+    label: Some('Vertices'),
+    size: std::mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+    usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+    mapped_at_creation: false
+});
+```
+
+This will create a buffer that will approximately match the size in bytes of the struct Uniforms that can be used later during a render pass. The use of [wgpu::BufferUsage::COPY_DST](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.COPY_DST) allows the buffer to be written directly to the queue via [wgpu::Queue::write_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_buffer). This method of updating an existing uniform buffer, applies to all types of buffers - whether that's a vertex buffer, a index buffer, or a uniform buffer.
+
+```rust
+// update vertices when the positions updated
+self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(VERTICES));
+// update the uniforms when the camera, or mouse positions changed
+self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+```
+
+### 4.2 Buffer Usage
+
+> Note: [wgpu::BufferUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html) has a number of available options that can be combined with one another. The most common ones apply to the type of buffer the data represents such as Vertex, Index, Uniform, or Storage. These coorespond to the input processing in the case of vertex shaders and compute shaders, while uniform and storage refer to the shader uniform storage types.
+
+* **[wgpu::BufferUsage::VERTEX](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.VERTEX)** referring to usage as a vertex buffer during a draw operation (in association with the [wgpu::RenderPass::set_vertex_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_vertex_buffer)).
+
+* **[wgpu::BufferUsage::INDEX](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.INDEX)** referring to usage as an index buffer during a draw operation (in association with the [wgpu::RenderPass::set_index_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_index_buffer)).
+
+* **[wgpu::BufferUsage::UNIFORM](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.UNIFORM)** referring to usage as a **UNIFORM** binding within a [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html).
+
+* **[wgpu::BufferUsage::STORAGE](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.STORAGE)** referring to usage as a **STORAGE** binding within a [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html).
+
+In addition to these common uses, there are the uses that involve the [wgpu::CommandEncoder](https://docs.rs/wgpu/0.6.0/wgpu/struct.CommandEncoder.html) and [wgpu::Queue::write_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html) that require either **[wgpu::BufferUsage::COPY_SRC](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.COPY_SRC)** or **[wgpu::BufferUsage::COPY_DST](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.COPY_DST)** (in the case of *copy_buffer_to_buffer*, *copy_texture_to_buffer*, or *write_buffer*). 
+
+Other use cases such as [wgpu::BufferUsage::MAP_READ](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.MAP_READ) refer to allowing a buffer to be read from or written to in the case of [wgpu::BufferUsage::MAP_WRITE](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.MAP_WRITE). These scenarios typically involve being able to asynchronously read or write to a buffer that has already been allocated on the device.
+
+### 4.3 Vertex Buffers
+
+> Vertex buffers are a type of rendering resource where the data consists of vertex attributes that can be configured to include any number of attribute data used in vertex processing. Vertex buffers may also be used with index buffers and primitive indicies in order to assemble rendering primitives such as triangle strips. Typically vertex buffers reside directly in graphics device memory rather than system memory so no additional memory transfers may need to occur (unless otherwise buffers are explicitly written to). 
+
+In wgpu, a vertex buffer is represented as a [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) and have an additional [wgpu::VertexBufferDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexBufferDescriptor.html) used to describe how the vertex buffer will be interpreted by the graphics pipeline. Vertex buffers, or any buffer for that matter, is represented by all the vertex data packed into a single contiguous slice of memory stored on the device.
+
+![Vertex Buffer Data](/assets/wgpu-vertex-buffer-data.png)
+
+Within a vertex shader we may have the following code block to output the vec3 position from the layout at **location=0** and assign the input **vec3 color** to the output **vec4 f_color**.
+
+```glsl
+#version 450
+
+layout(location=0) in vec3 pos;
+layout(location=1) in vec3 color;
+
+layout(location=0) out vec4 f_color;
+
+void main() {
+    gl_Position = vec4(pos, 1.0);
+    f_color = vec4(color, 1.0);
+}
+```
+
+The vertex is then represented in rust as a struct with the position and color set as such:
+
+```rust
+struct Vertex {
+    pos: [f32; 3],
+    color: [f32; 3]
+}
+```
+
+In order for the render pipeline to understand how to interpret the a given vertex buffer (which simply has a size and a usage), we must specify a few properties. Vertex buffer descriptor properties indicate how large a vertex is in bytes (**stride**), how to iterate over the data (**step mode**), and the actual underlying attributes of that vertex buffer defined through the a [wgpu::VertexAttributeDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexAttributeDescriptor.html). 
+
+```rust
+let render_pipeline = device.create_render_pipeline(
+    &wgpu::RenderPipelineDescriptor {
+        // ...
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint16,
+            vertex_buffers: &[
+                wgpu::VertexBufferDescriptor {
+                    stride: std::mem::size_of::<Vertex>(),
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttributeDescriptor {
+                            format: wgpu::VertexFormat::Float3,
+                            offset: 0,
+                            shader_location: 0
+                        },
+                        wgpu::VertexAttributeDescriptor {
+                            format: wgpu::VertexFormat::Float3,
+                            offset: std::mem::size_of::<[f32; 3]>(),
+                            shader_location: 1
+                        }
+                    ]
+                }
+            ]
+        },
+        // ...
+    }
+)
+```
+
+The vertex attribute's [wgpu::VertexFormat](https://docs.rs/wgpu/0.6.0/wgpu/enum.VertexFormat.html) should match the format in the shader. An offset is specified to indicate the offset **in bytes** from the previous attribute read in the vertex. Finally, the **shader_location** must match the **layout(location=INDEX)** in the shader.
+
+![Vertex Buffer Descriptor](/assets/wgpu-vertex-buffer-descriptor.png)
+
+> Note: Since much of the vertex attribute data may appear to be redundant if done in a sequenced order (shader location 0, 1 with incrementing offsets based on the attribute types), we can actually use the [wgpu::vertex_attr_array!](https://docs.rs/wgpu/0.6.0/wgpu/macro.vertex_attr_array.html) macro. The macro will map a **shader location** to a **vertex format** and calculate offsets automatically.
+> 
+> ```rust
+> use wgpu::VertexFormat::{Float3};
+> wgpu::VertexBufferDescriptor {
+>    stride: std::mem::size_of::<Vertex>(),
+>    step_mode: wgpu::InputStepMode::Vertex,
+>    attributes: &wgpu::vertex_attr_array![0 => Float3, 1 => Float3]
+> }
+> ```
+
+Once we are ready to execute a render pass during a render operation, you can call the **[wgpu::RenderPass::set_vertex_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_vertex_buffer)** to assign a vertex buffer to a particular **slot**. The slot should match the index of the matching descriptor in **[wgpu::VertexStateDescriptor::vertex_buffers](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexStateDescriptor.html#structfield.vertex_buffers)**. 
+
+```rust
+render_pass.set_vertex_buffer(0, &self.vertex_buffer.slice(..))
+```
+
+### 4.4 Example: Drawing a Polygon
+
+With the first set of resource concepts, namely vertex and uniform buffers, we have enough to build on the previous examples and pass along custom vertex data. The example triangle in the previous demo utilized the static vertices in the vertex shader. Let's go ahead and update the vertex shader below to be able to take in position data.
+
+```glsl
+// shader.vert
+#version 450
+
+layout(location=0) in vec2 pos;
+
+void main() {
+    gl_Position = vec4(pos, 0.0, 1.0);
+}
+```
+
+The vertex shader now takes a single vec2 for the position of the vertex. We can use this shader to create any shapes we like by passing along a number of vertices. To do this, we need to update the **new** function in the render state to store the additional vertex data.
+
+```rust
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct Vertex {
+    pos: [f32; 2]
+}
+
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+```
+
+Notice that in this example, we have added two trait attributes for **Copy**, and **Clone**. Both of these traits are required in order to be used by **bytemuck::Pod** and **bytemuck::cast_slice**. The **repr(C)** also indicates that this will be interpreted as a C-lang style struct as is. All of this will ensure that the **Vertex** struct will be treated as a normal array of bytes when **cast_slice** is executed. Following this, we need to create an actual vertex buffer descriptor that can be applied to **any Vertex**. To do this, we can leverage a **static lifetime** function on the Vertex impl to return the descriptor of the stride, step mode, and attribute layout.
+
+```rust
+impl Vertex {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float3
+                }
+            ]
+        }
+    }
+}
+```
+
+Next, let's update the render pipeline created in the **RenderState** to define how to interpret the vertex buffer descriptor we prevoiusly defined. This will be assigned to the **vertex_buffers** property in the [wgpu::VertexStateDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexStateDescriptor.html#structfield.vertex_buffers).
+
+```rust
+impl RenderState {
+    async fn new(window: &Window) -> Self {
+        // ... instance, surface, adapter, device, queue
+        // ... swap chain
+        // .. compile shaders load shader modules
+        // ... create render pipeline layout
+        let render_pipeline_layout = // device.create_pipeline_layout..
+        let render_pipeline = device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                // ...
+                vertex_state: wgpu::VertexStateDescriptor {
+                    index_format: wgpu::IndexFormat::Uint16,
+                    vertex_buffers: &[
+                        Vertex::desc()
+                    ]
+                }
+                // ...
+            }
+        )
+}
+```
+
+Now that the vertex buffer descriptor has been setup in the render pipeline, we can move along to actually creating the vertices that define the shape. Let's define a few utility methods that can generate a few different types of shapes such as a circle, quad, and triangle. 
+
+```rust
+struct Shape {
+    vertices: Vec<Vertex>
+}
+
+impl Shape {
+    fn triangle(center: [f32; 2], width: f32) -> Shape {
+        let w2 = width / 2.0;
+        Shape {
+            vertices: (&[
+                Vertex { pos: [center[0], center[1] + w2] },
+                Vertex { pos: [center[0] - w2, center[1] - w2] },
+                Vertex { pos: [center[0] + w2, center[1] - w2] }
+            ]).to_vec()
+        }
+    }
+
+    fn quad(center: [f32; 2], width: f32) -> Shape {
+        let w2 = width / 2.0;
+        Shape {
+            vertices: (&[
+                Vertex { pos: [center[0] - w2, center[1] - w2] },
+                Vertex { pos: [center[0] + w2, center[1] - w2] },
+                Vertex { pos: [center[0] - w2, center[1] + w2] },
+                Vertex { pos: [center[0] - w2, center[1] + w2] },
+                Vertex { pos: [center[0] + w2, center[1] - w2] },
+                Vertex { pos: [center[0] + w2, center[1] + w2] }
+            ]).to_vec()
+        }
+    }
+}
+```
+
+Implementing a triangle, as you would expect, is as simple as passing along 3 vertices. Since the render pipeline is using the rasterization [wgpu::PrimitiveTopology::TriangleList](https://docs.rs/wgpu/0.6.0/wgpu/enum.PrimitiveTopology.html#variant.TriangleList), 3 vertices will equal a single triangle. The quad function following this will then require 6 vertices to create 2 triangles. 
+
+> Note: If you wish to reduce the number of vertices required to generate a triangle, consider using a different primitive topology such as [wgpu::PrimitiveTopology::TriangleStrip](https://docs.rs/wgpu/0.6.0/wgpu/enum.PrimitiveTopology.html#variant.TriangleStrip) where each set of three adjacent vertices form a triangle. Remember however, that you can only set the rasterization primitive topology once per render pipeline - so all draw operations will follow this topology.
+
+Next, to create a circle, we can consider looping over the degrees of a circle and convert each degree to radians. The **x** and **y** coordinates around the circle is as simple as a **x = radians.cos()** and **y = radians.sin()**. Since we are using a triangle list, we need to create a new triangle through the center position, the coordinate at x and y, plus another vertex at the x and y of the current degree plus a step.
+
+```rust
+impl Shape {
+    // ...triangle, quad
+
+    fn circle(center: [f32; 2], width: f32) -> Shape {
+        let radius = width / 2.0;
+        let mut vertices: Vec<Vertex> = Vec::new();
+        let step = 5.0;
+        let max_steps = (360.0 / step) as i32;
+        for i in 0..max_steps {
+            let degrees = (i as f32) * step;
+            let radians = degrees * std::f32::consts::PI / 180.0;
+            let radius2 = (degrees + step) * std::f32::consts::PI / 180.0;
+            let x1 = radius * radians.cos() + center[0];
+            let x2 = radius * radians2.cos() + center[0];
+            let y1 = radius * radians.sin() + center[1];
+            let y2 = radius * radians2.sin() + center[1];
+            vertices.push(Vertex { pos: center});
+            vertices.push(Vertex { pos: [x1, y1] });
+            vertices.push(Vertex { pos: [x2, y2] });
+        }
+        Shape {
+            vertices: vertices
+        }
+    }
+}
+```
+
+> Tip: try adjusting the step to reduce the number of triangles/smoothing for the circle. 
+
+A few short-hand functions to generate a list of triangles for each primitive type is implemented. Next, to use these shapes they need to be converted into a [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) along with the number of vertices. To do this, let's create an **Entity** struct to store these values, and add a **Vec<Entity>** to the **RenderState** struct. 
+
+```rust
+struct Entity {
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: i32
+}
+
+struct RenderState {
+    // surface, device, queue, swap chain, size, render pipeline...
+    entities: Vec<Entity>
+}
+
+```
+
+Then, within a **spawn** function, we can convert the passed in **Shape** into an **Entity** that stores a newly created buffer and number of vertices. Later on, we can use the return value of the buffer and store it as a reference for instancing.
+
+```rust
+impl RenderState {
+    async fn new(window: &Window) -> Self {
+        // ...instance, surface, adapter, device, queue
+        // ...swap chain, compile and load shaders
+        // ...setup render pipeline
+
+        let entities: Vec<Entity> = Vec::new();
+
+        Self {
+            // surface, device, queue, sw_desc, swap chain, size
+            // render_pipeline, u_time
+            entities
+        }
+    }
+
+    fn spawn(&mut self, shape: Shape) {
+        self.entities.push(Entity {
+            vertex_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(shape.vertices),
+                    usage: wgpu::BufferUsage::VERTEX
+                }
+            ),
+            num_vertices: shape.vertices.len()
+        });
+    }
+
+    // resize, render...
+}
+```
+
+> Note: When we approach instancing, we will talk about how we can leverage the same **wgpu::Buffer** for multiple different instances. This is very useful because we may have dozens or even hundreds or thousands of the same mesh or shapes but the only difference between the instances is a simple transform.
+
+Great! We have a place to store entities, utility methods to generate shapes, and a render pipeline that can correctly interpret vertex buffers. All that's left is to actually spawn a number of shapes and set the vertex buffers on the render pass and draw them.
+
+```rust
+// ...
+fn main() {
+    // ...input helper, event loop, window
+
+    let mut state = block_on(RenderState::new(&window));
+    state.spawn(Shape::triangle([-0.5, -0.5], 0.1));
+    state.spawn(Shape::quad([0.5, -0.25], 0.4));
+    state.spawn(Shape::circle([0.25, 0.25], 0.4));
+
+    // event loop.run...
+}
+// ...
+impl RenderState {
+    // ...new, spawn, resize
+
+    fn render(&mut self) {
+        // ...get current frame
+        // ...create command encoder
+        {
+            let mut render_pass = // encoder.begin_render_pass...
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            for entity in &self.entities {
+                render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
+                render_pass.draw(0..entity.num_vertices, 0..1);
+            }
+        }
+
+        // ...queue.submit
+    }
+}
+```
+
+![Shapes](/assets/wgpu-vertex-buffer-polygons.png)
+
+### 4.4 Input Step Mode and Instancing
+
+> Instancing is a technique used to render multiple copies of the same mesh/vertex/primitive data. The vertex buffer data will describe what a single instance would be rendered as, whereas additional instance uniform data may be used to add additional transforms, translations, and variations to the vertex data. This makes rendering large numbers of instances easy to highly parallelize as only the initial vertex data for a single mesh is required to be stored on the device.
+
+When working specifically with vertex buffers, it is possible to create additional vertex buffer objects that can be interpreted as instance data rather than per vertex primitives. In a previous section, we created a **Vertex** struct that stored a **float2** for position data. The [wgpu::VertexBufferDescriptor](https://docs.rs/0.6.0/wgpu/struct.VertexBufferDescriptor.html) object defined the stride to be over the size of the **Vertex**, with attributes defining offset, shader location, and vertex format.
+
+The input step mode is normally defined as per vertex, but if you are using [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html#variant.Instance), you can pass vertex buffer data that will be iterated as instance data rather than per vertex data. The vertex buffer descriptor might look the same in terms of how it defines each of the attributes and the stride of the data, but specifying the input step as **Instance** would indicate to the render pipeline that the next slice of data (after incrementing by **stride**) is another instance, not the next vertex.
+
+Consider the following vertex shader that has 2 layout attributes to work with. The first **vec2 pos** is the initial vertex position, while the **vec2 i_pos** will be a *per instance position*.
+
+```glsl
+#version 450
+
+layout(location=0) in vec2 pos;
+layout(location=1) in vec2 i_pos;
+
+void main() {
+    gl_Position = vec4(pos + i_pos, 0.0, 1.0);
+}
+```
+
+> Note: you can access the current instance position in a vertex shader with the **gl_InstanceIndex** variable. This is useful if you decide to pass along a large uniform buffer that contains all the mat4 transformations for every instance. This kind of indexing into a large uniform buffer array is a different technique than using vertex buffer objects and iterating over them as instance data.
+
+The rust that complements this would need to define an additional vertex buffer descriptor over a struct that can store per instance data such as the instance position.
+
+```rust
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct EntityInstance {
+    pos: [f32; 2]
+}
+
+unsafe impl bytemuck::Pod for EntityInstance {}
+unsafe impl bytemuck::Zeroable for EntityInstance {}
+
+impl EntityInstance {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<EntityInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float2
+                },
+                wgpu::VertexAttributeDescriptor {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float
+                }
+            ]
+        }
+    }
+}
+```
+
+The vertex buffer descriptor begins its shader location at **1**, since there is another vertex buffer that has already defined a vertex attribute descriptor at **shader_location = 0**. Other than that difference, and the use of [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html) we can pass this new descriptor into the render pipeline.
+
+```rust
+let render_pipeline = device.create_render_pipeline(
+    &wgpu::RenderPipelineDescriptor {
+        // ...
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint16,
+            vertex_buffers: &[
+                Vertex::desc()
+                EntityInstance::desc()
+            ]
+        }
+    }
+)
+```
+
+The creation of the buffer itself is the same as in the case of vertices through **create_buffer_init** and passing along the instance data. We simply need to assign the additional **instance** vertex buffer to the render pass before executing draw on a number of instances.
+
+```rust
+render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
+render_pass.set_vertex_buffer(1, entity.instances_buffer.slice(..));
+render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
+```
+
+### 4.5 Example: Drawing Particle Instances
+
+### 4.6 Textures
 
 > Originally referred to as diffuse mapping, textures are simply image representation of pixels to be mapped for color (diffuse), normals, bump mapping, height maps, displacement, reflections, specular, occlusion, and various other techniques used in a materials system. [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html) is created by the [wgpu::Device::create_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_texture) described by a [wgpu::TextureDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDescriptor.html) including size, mip counts, sample counts, dimensions, [wgpu::TextureFormat](https://docs.rs/wgpu/0.6.0/wgpu/enum.TextureFormat.html) and [wgpu::TextureUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureUsage.html). 
 
@@ -1199,7 +1680,7 @@ When calling [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct
 
 Writing a texture to the queue effectively creates a single buffer (similar to `create_buffer_init` from before) that downstream operations will have access to when referring to the texture descriptors. A descriptor's usage (like a buffer's usage) can ensure that the texture can be used within a shader (or other various uses) and in this case be able to copy data to it. Additional setup is needed later one to use it with a **wgpu::TextureView** like we've seen in other operations.
 
-## 2.6 Sampler
+### 4.3 Sampler
 
 > [wgpu::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/struct.Sampler.html) defines how a pipeline will sample (i.e. given a pixel coordinate on or outside the texture boundaries - what color should be returned) from [wgpu::TextureView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureView.html) by defining image filters (e.g. anisotropy) and address (wrapping) modes (such as in the x, y, z directions), magnified filter, minimized filter - described by [wgpu::SamplerDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.SamplerDescriptor.html).
 
@@ -1232,7 +1713,7 @@ Additional properties such as the **mag_filter** and **min_filter** are handled 
 * **[wgpu::FilterMode::Linear](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Linear)** when magnified the textures are smooth but blury as it scales.
 * **[wgpu::FilterMode::Nearest](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Nearest)** when magnified pixels are sampled using nearest neighbor
 
-## 2.7 Bind Groups and Layouts
+### 4.4 Bind Groups and Layouts
 
 > In order to make use of resources (e.g. Textures, Samplers, Buffers) from within shaders we need a way to reference them. BindGroups and PipelineLayouts provide us with a mechanism for plugging in these resources. [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html) represents a set of resources bound to bindings described by a [wgpu::BindGroupLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayout.html). Use the [wgpu::Device::create_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group) to create a bind group.
 
@@ -1275,4 +1756,34 @@ let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
     ]
 });
 ```
+
+## Rust Sections
+
+### ranges
+
+### drop traits
+
+### mut
+
+### &
+
+### ranges
+
+### some, option, none
+
+### structs, types
+
+### match
+
+### functions -> Self
+
+### unwrap
+
+### macros
+
+### move |
+
+### u_time: f32 = 0.0
+
+### *control_flow = 
 
