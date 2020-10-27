@@ -1,6 +1,6 @@
 ---
 title: Rust Graphics Programming with WGPU
-published: true
+published: false
 book: true
 ---
 
@@ -62,6 +62,7 @@ Throughout this book we will end up using a variety of dependencies to perform v
 * [bytemuck](https://github.com/Lokathor/bytemuck) working with bytes from structs and types for buffers later
 * [image](https://github.com/image-rs/image) image processing functions and methods for converting image formats
 * [shaderc](https://github.com/google/shaderc-rs) rust bindings for the collection of tools/libs for shader compilation
+* [nanorand](https://github.com/aspenluxxxy/nanorand-rs) zero-dependency library for random number generation
 
 ```toml
 [dependencies]
@@ -72,6 +73,7 @@ futures = "0.3.6"
 bytemuck = "1.4.1"
 image = "0.23.10"
 shaderc = "0.6.2"
+nanorand = "0.4.4"
 ```
 
 ## 0.3 Event Loop
@@ -1317,7 +1319,79 @@ Once we are ready to execute a render pass during a render operation, you can ca
 render_pass.set_vertex_buffer(0, &self.vertex_buffer.slice(..))
 ```
 
-### 4.4 Example: Drawing a Polygon
+### 4.4 Input Step Mode and Instancing
+
+> Instancing is a technique used to render multiple copies of the same mesh/vertex/primitive data. The vertex buffer data will describe what a single instance would be rendered as, whereas additional instance uniform data may be used to add additional transforms, translations, and variations to the vertex data. This makes rendering large numbers of instances easy to highly parallelize as only the initial vertex data for a single mesh is required to be stored on the device.
+
+When working specifically with vertex buffers, it is possible to create additional vertex buffer objects that can be interpreted as instance data rather than per vertex primitives. In a previous section, we created a **Vertex** struct that stored a **float2** for position data. The [wgpu::VertexBufferDescriptor](https://docs.rs/0.6.0/wgpu/struct.VertexBufferDescriptor.html) object defined the stride to be over the size of the **Vertex**, with attributes defining offset, shader location, and vertex format.
+
+The input step mode is normally defined as per vertex, but if you are using [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html#variant.Instance), you can pass vertex buffer data that will be iterated as instance data rather than per vertex data. The vertex buffer descriptor might look the same in terms of how it defines each of the attributes and the stride of the data, but specifying the input step as **Instance** would indicate to the render pipeline that the next slice of data (after incrementing by **stride**) is another instance, not the next vertex.
+
+Consider the following vertex shader that has 2 layout attributes to work with. The first **vec2 pos** is the initial vertex position, while the **vec2 i_pos** will be a *per instance position*.
+
+```glsl
+#version 450
+
+layout(location=0) in vec2 pos;
+layout(location=1) in vec2 i_pos;
+
+void main() {
+    gl_Position = vec4(pos + i_pos, 0.0, 1.0);
+}
+```
+
+> Note: you can access the current instance position in a vertex shader with the **gl_InstanceIndex** variable. This is useful if you decide to pass along a large uniform buffer that contains all the mat4 transformations for every instance. This kind of indexing into a large uniform buffer array is a different technique than using vertex buffer objects and iterating over them as instance data.
+
+The rust that complements this would need to define an additional vertex buffer descriptor over a struct that can store per instance data such as the instance position.
+
+```rust
+struct EntityInstance {
+    pos: [f32; 2]
+}
+
+impl EntityInstance {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<EntityInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float2
+                }
+            ]
+        }
+    }
+}
+```
+
+The vertex buffer descriptor begins its shader location at **1**, since there is another vertex buffer that has already defined a vertex attribute descriptor at **shader_location = 0**. Other than that difference, and the use of [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html) we can pass this new descriptor into the render pipeline.
+
+```rust
+let render_pipeline = device.create_render_pipeline(
+    &wgpu::RenderPipelineDescriptor {
+        // ...
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint16,
+            vertex_buffers: &[
+                Vertex::desc()
+                EntityInstance::desc()
+            ]
+        }
+    }
+)
+```
+
+The creation of the buffer itself is the same as in the case of vertices through **create_buffer_init** and passing along the instance data. We simply need to assign the additional **instance** vertex buffer to the render pass before executing draw on a number of instances.
+
+```rust
+render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
+render_pass.set_vertex_buffer(1, entity.instances_buffer.slice(..));
+render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
+```
+
+### 4.5 Example: Drawing a Shape
 
 With the first set of resource concepts, namely vertex and uniform buffers, we have enough to build on the previous examples and pass along custom vertex data. The example triangle in the previous demo utilized the static vertices in the vertex shader. Let's go ahead and update the vertex shader below to be able to take in position data.
 
@@ -1370,11 +1444,7 @@ Next, let's update the render pipeline created in the **RenderState** to define 
 ```rust
 impl RenderState {
     async fn new(window: &Window) -> Self {
-        // ... instance, surface, adapter, device, queue
-        // ... swap chain
-        // .. compile shaders load shader modules
-        // ... create render pipeline layout
-        let render_pipeline_layout = // device.create_pipeline_layout..
+        // ..initialization
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 // ...
@@ -1386,7 +1456,10 @@ impl RenderState {
                 }
                 // ...
             }
-        )
+        );
+        // ..
+    }
+    // resize, render..
 }
 ```
 
@@ -1551,36 +1624,37 @@ impl RenderState {
 
 ![Shapes](/assets/wgpu-vertex-buffer-polygons.png)
 
-### 4.4 Input Step Mode and Instancing
+### 4.6 Example: Particle Instancing
 
-> Instancing is a technique used to render multiple copies of the same mesh/vertex/primitive data. The vertex buffer data will describe what a single instance would be rendered as, whereas additional instance uniform data may be used to add additional transforms, translations, and variations to the vertex data. This makes rendering large numbers of instances easy to highly parallelize as only the initial vertex data for a single mesh is required to be stored on the device.
+With **instancing** we can now build a very rudimentary particle system that can render thousands of primitives without having to pass along vertex data for each and every instance. Recall that the previous example created several shapes with a few utility methods to pass along position and width. Instead of doing this, we would like to have **EntityInstance** define a translate position that will effectively translate all the vertices associated with a given instance.
 
-When working specifically with vertex buffers, it is possible to create additional vertex buffer objects that can be interpreted as instance data rather than per vertex primitives. In a previous section, we created a **Vertex** struct that stored a **float2** for position data. The [wgpu::VertexBufferDescriptor](https://docs.rs/0.6.0/wgpu/struct.VertexBufferDescriptor.html) object defined the stride to be over the size of the **Vertex**, with attributes defining offset, shader location, and vertex format.
-
-The input step mode is normally defined as per vertex, but if you are using [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html#variant.Instance), you can pass vertex buffer data that will be iterated as instance data rather than per vertex data. The vertex buffer descriptor might look the same in terms of how it defines each of the attributes and the stride of the data, but specifying the input step as **Instance** would indicate to the render pipeline that the next slice of data (after incrementing by **stride**) is another instance, not the next vertex.
-
-Consider the following vertex shader that has 2 layout attributes to work with. The first **vec2 pos** is the initial vertex position, while the **vec2 i_pos** will be a *per instance position*.
+To do this, let's start by updating the vertex shader to have an additional variable for storing **per instance** position data, let's additionally add a rotation angle. The rotation angle will be converted into a 2d matrix transform.
 
 ```glsl
 #version 450
 
 layout(location=0) in vec2 pos;
 layout(location=1) in vec2 i_pos;
+layout(location=2) in float i_rot;
+
+mat2 rotate2d(float angle) {
+    return mat2(cos(angle), -sin(angle),
+        sin(angle), cos(angle));
+}
 
 void main() {
-    gl_Position = vec4(pos + i_pos, 0.0, 1.0);
+    gl_Position = vec4(rotate2d(i_rot) * (pos + i_pos), 0.0, 1.0);
 }
 ```
 
-> Note: you can access the current instance position in a vertex shader with the **gl_InstanceIndex** variable. This is useful if you decide to pass along a large uniform buffer that contains all the mat4 transformations for every instance. This kind of indexing into a large uniform buffer array is a different technique than using vertex buffer objects and iterating over them as instance data.
-
-The rust that complements this would need to define an additional vertex buffer descriptor over a struct that can store per instance data such as the instance position.
+Then, we will need to setup a struct and a vertex buffer descriptor to store instance data.
 
 ```rust
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct EntityInstance {
-    pos: [f32; 2]
+    pos: [f32; 2],
+    rot: f32
 }
 
 unsafe impl bytemuck::Pod for EntityInstance {}
@@ -1598,7 +1672,7 @@ impl EntityInstance {
                     format: wgpu::VertexFormat::Float2
                 },
                 wgpu::VertexAttributeDescriptor {
-                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of<[f32; 2]>(),
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float
                 }
@@ -1608,32 +1682,184 @@ impl EntityInstance {
 }
 ```
 
-The vertex buffer descriptor begins its shader location at **1**, since there is another vertex buffer that has already defined a vertex attribute descriptor at **shader_location = 0**. Other than that difference, and the use of [wgpu::InputStepMode::Instance](https://docs.rs/wgpu/0.6.0/wgpu/enum.InputStepMode.html) we can pass this new descriptor into the render pipeline.
+Pass along this additional vertex buffer descriptor to the render pipeline's **vertex_state**.
 
 ```rust
-let render_pipeline = device.create_render_pipeline(
-    &wgpu::RenderPipelineDescriptor {
+impl RenderState {
+    async fn new(window: &Window) -> Self {
+        // ...initialization
+        let render_pipeline = device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                // ...
+                vertex_state: wgpu::VertexStateDescriptor {
+                    index_format: wgpu::IndexFormat::Uint16,
+                    vertex_buffers: &[
+                        Vertex::desc(),
+                        EntityInstance::desc()
+                    ]
+                }
+                // ..
+            }
+        );
         // ...
-        vertex_state: wgpu::VertexStateDescriptor {
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[
-                Vertex::desc()
-                EntityInstance::desc()
-            ]
-        }
     }
-)
+    // resize, render..
+}
 ```
 
-The creation of the buffer itself is the same as in the case of vertices through **create_buffer_init** and passing along the instance data. We simply need to assign the additional **instance** vertex buffer to the render pass before executing draw on a number of instances.
+Since all shape instances are going to be translated according to an instance's position, we can simplify the shape spawning to take a single **width** value and use the default **[0.0, 0.0]** as the center position for all shapes.
 
 ```rust
-render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
-render_pass.set_vertex_buffer(1, entity.instances_buffer.slice(..));
-render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
+fn triangle(width: f32) -> Shape {
+    let h = width / 2.0;
+    let nh = -1.0 * h;
+    Shape {
+        vertices: (&[
+            Vertex { pos: [0.0, h] },
+            Vertex { pos: [nh, nh] },
+            Vertex { pos: [h, nh] }
+        ]).to_vec()
+    }
+}
+
+fn quad(width: f32) -> Shape {
+    let h = width / 2.0;
+    let nh = -1.0 * h;
+    Shape {
+        vertices: (&[
+            Vertex { pos: [nh, nh] },
+            Vertex { pos: [h, nh] },
+            Vertex { pos: [nh, h] },
+            Vertex { pos: [nh, h] },
+            Vertex { pos: [h, nh] },
+            Vertex { pos: [h, h] }
+        ]).to_vec()
+    }
+}
 ```
 
-### 4.5 Example: Drawing Particle Instances
+The previous implementation of the circle function included the center position with the calculations. We can update that function to generate the polar coordinates without those additions and just consider the **radius * radians.cos/sin** calculations.
+
+```rust
+fn circle(radius: f32) -> Shape {
+    let radius = width / 2.0;
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let step = 5.0;
+    let max_steps = (360.0 / step) as i32;
+    for i in 0..max_steps {
+        let degrees = (i as f32) * step;
+        let radians = degrees * std::f32::consts::PI / 180.0;
+        let radians2 = (degrees + step) * std::f32::consts::PI / 180.0;
+        let x1 = radius * radians.cos();
+        let y1 = radius * radians.sin();
+        let x2 = radius * radians2.cos();
+        let y2 = radius * radians2.sin();
+        vertices.push(Vertex { pos: [0.0, 0.0] });
+        vertices.push(Vertex { pos: [x1, y1] });
+        vertices.push(Vertex { pos: [x2, y2] });
+    }
+    Shape {
+        vertices: vertices
+    }
+}
+```
+
+To **spawn** a number of instances, we are going to need to update the render state **spawn** function to convert a **Vec<EntityInstance>** into a new buffer that can be stored on the entity. The buffer will be initialized using the **create_buffer_init** function we used before.
+
+```rust
+struct Entity {
+    vertex_buffer: wgpu::Buffer,
+    entity_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    num_instances: u32
+}
+
+impl RenderState {
+    // ...
+    fn spawn(&mut self, polygon: Polygon, instances: Vec<EntityInstance>) {
+        self.entities.push(Entity {
+            vertex_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&polygon.vertices),
+                    usage: wgpu::BufferUsage::VERTEX
+                }
+            ),
+            entity_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&instances),
+                    usage: wgpu::BufferUsage::VERTEX
+                }
+            ),
+            num_vertices: polygon.vertices.len() as u32,
+            num_instances: instances.len() as u32
+        });
+    }
+    // ...
+}
+```
+
+> Note: if we wanted to update the position data for each of the instances on the fly, we would need to store the instance data as well as the buffer. An update function could then make a call to [wgpu::Queue::write_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_buffer) in order to update the bytes of the entities as data was updated. If the size of buffer has to change, we would need to re-allocate that address space accordingly.
+
+The **render** function can now take advantage of this additional [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) and **num_instances** when setting the additional vertex buffer and calling **draw**.
+
+```rust
+impl RenderState {
+    // ...
+    fn render(&mut self) {
+        // get frame, create encoder
+        {
+            let mut render_pass = // encoder.begin_render_pass...
+            render_pass.set_pipeline(&self.render_pipeline);
+            for entity in &self.entities {
+                render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, entity.entity_buffer.slice(..));
+                render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
+            }
+        }
+
+        // self.queue.submit...
+    }
+}
+```
+
+The last thing we need to do is actually spawn the number of instances. Each instance is going to have a random position and random rotation angle that will be used to transform the vertices within the render pipeline. We're going to make use of the [nanorand](https://crates.io/crates/nanorand) crate for the random number generation.
+
+```rust
+use nanorand::{RNG, WyRand};
+
+fn rand_instances(num_instances: i32) -> Vec<EntityInstance> {
+    let mut instances: Vec<EntityInstance> = Vec::new();
+    let mut rng = WyRand::new();
+    for i in 0..num_instances {
+        let x: f32 = (rng.generate_range::<u32>(1, 200) as f32 - 100.0) / 100.0;
+        let y: f32 = (rng.generate_range::<u32>(1, 200) as f32 - 100.0) / 100.0;
+        let rot: f32 = rng.generate_range::<u32>(1, 360) as f32;
+        instances.push(EntityInstance {
+            pos: [x, y],
+            rot: rot
+        });
+    }
+
+    instances
+}
+```
+
+This can then be used within the **main** function to spawn a number of instances with the associated primitive shapes we have previously defined.
+
+```rust
+fn main() {
+    // ...
+    let mut state = block_on(RenderState::new(&window));
+    state.spawn(Shape::triangle(0.04), rand_instances(200));
+    state.spawn(Shape::quad(0.004), rand_instances(1000));
+    state.spawn(Shape::circle(0.02), rand_instances(100));
+    // ...
+}
+```
+
+![Particle Instancing](/assets/wgpu-particle-instancing.png)
 
 ### 4.6 Textures
 
