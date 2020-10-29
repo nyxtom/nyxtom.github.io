@@ -1327,7 +1327,51 @@ Once we are ready to execute a render pass during a render operation, you can ca
 render_pass.set_vertex_buffer(0, &self.vertex_buffer.slice(..))
 ```
 
-### 4.4 Input Step Mode and Instancing
+### Index Buffers
+
+> Index buffers are a type of rendering resource where the data consists of indices that point into a vertex buffer. This allows you to effectively reorder the vertex data and reuse existing data for multiple vertices. By combining an index buffer with a vertex buffer you can save on space needed to generate many primitives where the vertex points happen to be the same; this also saves on execution time since the vertex shader will not necessarily need to be executed again for a given vertex.
+
+A good way to visualize an index buffer is to consider how a primitive triangle is normally created when you have a [wgpu::PrimitiveTopology](https://docs.rs/wgpu/0.6.0/wgpu/enum.PrimitiveTopology.html) set to a **TriangleList**. The order of the indices are highly dependent on the primitive topology so it's important to know which one you are using.
+
+![Indexing Vertex Buffers](/assets/wgpu-indexing-buffers.png)
+
+In a standard quad example, when rendering with a triangle list, the quad requires 2 triangles with 6 vertices to create both triangles together. Using an index buffer, we only have to specify 4 vertices and 6 indices to create the quad.
+
+An index buffer can be constructed in the same way a vertex buffer is using the [wgpu::Device::create_buffer_init](https://docs.rs/wgpu/0.6.0/wgpu/util/trait.DeviceExt.html#tymethod.create_buffer_init). The only difference is that the [wgpu::BufferUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.INDEX) is set to **INDEX** instead of **VERTEX**. Additional buffer uses can be made if you need to write or copy the buffer later.
+
+```rust
+let indices: Vec<u16> = vec![0, 1, 2];
+let index_buffer = self.device.create_buffer_init(
+    &wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsage::INDEX
+    }
+);
+```
+
+> Note: The order of the indices not only matters in terms of the vertices that they are pointing to, but the order should also keep in mind the [wgpu::RasterizationStateDescriptor::front_face](https://docs.rs/wgpu/0.6.0/wgpu/struct.RasterizationStateDescriptor.html#structfield.front_face). When specifying a [wgpu::FrontFace::Ccw](https://docs.rs/wgpu/0.6.0/wgpu/enum.FrontFace.html#variant.Ccw) the triangles with vertices in counter clockwise order are considered the front face (default in right-handed coordinate spaces). This is important for how **culling** works during the rasterization step. If you find missing primitives, the indices might be in the wrong order.
+
+It should be noted that the indices themselves need to match the **index_format** specified on the [wgpu::VertexStateDescriptor::index_format](https://docs.rs/wgpu/0.6.0/wgpu/struct.VertexStateDescriptor.html#structfield.index_format). Usually this is set to **Uint16** but you can also specify **Uint32** for 32-bit unsigned integers.
+
+```rust
+wgpu::VertexStateDescriptor {
+    index_format: wgpu::IndexFormat::Uint16,
+    vertex_buffers: &[
+        Vertex::desc()
+    ]
+}
+```
+
+Once you have an index buffer, it can be assigned onto the render pass through the [wgpu::RenderPass::set_index_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_index_buffer). Subsequent calls to [wgpu::RenderPass::draw_indexed](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.draw_indexed) will draw the indexed primitives using the active index buffer and active vertex buffers.
+
+```rust
+render_pass.set_index_buffer(&self.index_buffer.slice(..));
+// ...
+render_pass.draw_indexed(0..num_indices, 0, 0..num_instances);
+```
+
+### Input Step Mode and Instancing
 
 > Instancing is a technique used to render multiple copies of the same mesh/vertex/primitive data. The vertex buffer data will describe what a single instance would be rendered as, whereas additional instance uniform data may be used to add additional transforms, translations, and variations to the vertex data. This makes rendering large numbers of instances easy to highly parallelize as only the initial vertex data for a single mesh is required to be stored on the device.
 
