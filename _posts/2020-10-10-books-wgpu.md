@@ -1397,6 +1397,8 @@ void main() {
 The rust that complements this would need to define an additional vertex buffer descriptor over a struct that can store per instance data such as the instance position.
 
 ```rust
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct EntityInstance {
     pos: [f32; 2]
 }
@@ -1443,7 +1445,7 @@ render_pass.set_vertex_buffer(1, entity.instances_buffer.slice(..));
 render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
 ```
 
-### 4.5 Example: Drawing a Shape
+### Example: Drawing a Shape
 
 With the first set of resource concepts, namely vertex and uniform buffers, we have enough to build on the previous examples and pass along custom vertex data. The example triangle in the previous demo utilized the static vertices in the vertex shader. Let's go ahead and update the vertex shader below to be able to take in position data.
 
@@ -1462,16 +1464,13 @@ The vertex shader now takes a single vec2 for the position of the vertex. We can
 
 ```rust
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct Vertex {
     pos: [f32; 2]
 }
-
-unsafe impl bytemuck::Pod for Vertex {}
-unsafe impl bytemuck::Zeroable for Vertex {}
 ```
 
-Notice that in this example, we have added two trait attributes for **Copy**, and **Clone**. Both of these traits are required in order to be used by **bytemuck::Pod** and **bytemuck::cast_slice**. The **repr(C)** also indicates that this will be interpreted as a C-lang style struct as is. All of this will ensure that the **Vertex** struct will be treated as a normal array of bytes when **cast_slice** is executed. Following this, we need to create an actual vertex buffer descriptor that can be applied to **any Vertex**. To do this, we can leverage a **static lifetime** function on the Vertex impl to return the descriptor of the stride, step mode, and attribute layout.
+Notice that in this example, we have added trait attributes for **Copy**, **Clone**, **Pod**, and **Zeroable**. These traits are required in order to be used by **bytemuck::Pod** and **bytemuck::cast_slice**. The **repr(C)** also indicates that this will be interpreted as a C-lang style struct as is. All of this will ensure that the **Vertex** struct will be treated as a normal array of bytes when **cast_slice** is executed. Following this, we need to create an actual vertex buffer descriptor that can be applied to **any Vertex**. To do this, we can leverage a **static lifetime** function on the Vertex impl to return the descriptor of the stride, step mode, and attribute layout.
 
 ```rust
 impl Vertex {
@@ -1598,7 +1597,6 @@ struct RenderState {
     // surface, device, queue, swap chain, size, render pipeline...
     entities: Vec<Entity>
 }
-
 ```
 
 Then, within a **spawn** function, we can convert the passed in **Shape** into an **Entity** that stores a newly created buffer and number of vertices. Later on, we can use the return value of the buffer and store it as a reference for instancing.
@@ -1676,7 +1674,7 @@ impl RenderState {
 
 ![Shapes](/assets/wgpu-vertex-buffer-polygons.png)
 
-### 4.6 Example: Particle Instancing
+### Example: Particle Instancing
 
 With **instancing** we can now build a very rudimentary particle system that can render thousands of primitives without having to pass along vertex data for each and every instance. Recall that the previous example created several shapes with a few utility methods to pass along position and width. Instead of doing this, we would like to have **EntityInstance** define a translate position that will effectively translate all the vertices associated with a given instance.
 
@@ -1703,14 +1701,11 @@ Then, we will need to setup a struct and a vertex buffer descriptor to store ins
 
 ```rust
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct EntityInstance {
     pos: [f32; 2],
     rot: f32
 }
-
-unsafe impl bytemuck::Pod for EntityInstance {}
-unsafe impl bytemuck::Zeroable for EntityInstance {}
 
 impl EntityInstance {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
@@ -1828,12 +1823,12 @@ struct Entity {
 
 impl RenderState {
     // ...
-    fn spawn(&mut self, polygon: Polygon, instances: Vec<EntityInstance>) {
+    fn spawn(&mut self, shape: Shape, instances: Vec<EntityInstance>) {
         self.entities.push(Entity {
             vertex_buffer: self.device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(&polygon.vertices),
+                    contents: bytemuck::cast_slice(&shape.vertices),
                     usage: wgpu::BufferUsage::VERTEX
                 }
             ),
@@ -1844,7 +1839,7 @@ impl RenderState {
                     usage: wgpu::BufferUsage::VERTEX
                 }
             ),
-            num_vertices: polygon.vertices.len() as u32,
+            num_vertices: shape.vertices.len() as u32,
             num_instances: instances.len() as u32
         });
     }
@@ -1913,7 +1908,416 @@ fn main() {
 
 ![Particle Instancing](/assets/wgpu-particle-instancing.png)
 
-### 4.6 Textures
+### Example: Drawing with Indices
+
+In each of the previous examples we used the [wgpu::RenderPass::draw](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.draw) to include the range of vertices and range of instances. The shape functions were made up of 3 vertices per triangle primitive. Unfortunately, all of these additional vertices to create basic shapes can add duplication where it is not needed. For instance to create a quad the original implementation was as follows:
+
+```rust
+fn quad(width: f32) -> Shape {
+    let h = width / 2.0;
+    let nh = -1.0 * h;
+    Shape {
+        vertices: (&[
+            Vertex { pos: [nh, nh] },
+            Vertex { pos: [h, nh] },
+            Vertex { pos: [nh, h] },
+            Vertex { pos: [nh, h] },
+            Vertex { pos: [h, nh] },
+            Vertex { pos: [h, h] }
+        ]).to_vec()
+    }
+}
+```
+
+The quad in the above example is rendered using 6 vertices - or 2 triangle primitives. However, to actually create a quad there are only **4 unique vertices**!. The same problem is more noticable when we create a **circle** shape.
+
+```rust
+fn circle(radius: f32) -> Shape {
+    let radius = width / 2.0;
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let step = 5.0;
+    let max_steps = (360.0 / step) as i32;
+    for i in 0..max_steps {
+        let degrees = (i as f32) * step;
+        let radians = degrees * std::f32::consts::PI / 180.0;
+        let radians2 = (degrees + step) * std::f32::consts::PI / 180.0;
+        let x1 = radius * radians.cos();
+        let y1 = radius * radians.sin();
+        let x2 = radius * radians2.cos();
+        let y2 = radius * radians2.sin();
+        vertices.push(Vertex { pos: [0.0, 0.0] });
+        vertices.push(Vertex { pos: [x1, y1] });
+        vertices.push(Vertex { pos: [x2, y2] });
+    }
+    Shape {
+        vertices: vertices
+    }
+}
+```
+
+A circle made up of triangle list primitives in our above implementation would duplicate the center and one additional vertex for each of the steps around the degrees of a circle. For a circle made up of 90 triangles (**step = 5.0**) we would end up with 270 vertices for a circle that only actually needs 91 vertices (1 vertex for each position around the circle, and 1 vertex in the center). To solve these problems we can make use of the **index buffer** and the [wgpu::Queue::draw_indexed](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderBundleEncoder.html#method.draw_indexed) function to pass a range of indices instead.
+
+```rust
+struct Shape {
+    vertices: Vec<Vertex>,
+    indices: Vec<u16>
+}
+
+struct Entity {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    entity_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    num_indices: u32,
+    num_instances: u32
+}
+```
+
+The first set of changes that need to be made include updating the **Shape** to actually store the indices, and updating the **Entity** struct to store the buffer and number of indices. We can already update the **spawn** function to create the [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) based on this change. Since the buffer will be used as an index buffer we need to make sure to use the [wgpu::BufferUsage::INDEX](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.INDEX) usage format.
+
+```rust
+impl RenderState {
+    // ...
+    fn spawn(&mut self, shape: Shape, instances: Vec<EntityInstance>) {
+        self.entities.push(Entity {
+            vertex_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&shape.vertices),
+                    usage: wgpu::BufferUsage::VERTEX
+                }
+            ),
+            index_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Index Buffer"),
+                    contents: bytemuck::cast_slice(&shape.indices),
+                    usage: wgpu::BufferUsage::INDEX
+                }
+            ),
+            entity_buffer: self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Instance Buffer"),
+                    contents: bytemuck::cast_slice(&instances),
+                    usage: wgpu::BufferUsage::VERTEX
+                }
+            ),
+            num_vertices: shape.vertices.len() as u32,
+            num_indices: shape.indices.len() as u32,
+            num_instances: instances.len() as u32
+        });
+    }
+    // ...
+}
+```
+
+Next, we can go ahead and update the render function to set the index buffer using the [wgpu::RenderPass::set_index_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_index_buffer) and pass along the indices to the [wgpu::Queue::draw_indexed](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderBundleEncoder.html#method.draw_indexed).
+
+```rust
+impl RenderState {
+    // ...
+    fn render(&mut self) {
+        // ..get frame, create encoder
+        {
+            let mut render_pass = // encoder.begin_render_pass...
+
+            self.u_time = self.u_time + 0.01;
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_push_constants(
+                wgpu::ShaderStage::FRAGMENT, 
+                0,
+                bytemuck::cast_slice(&[
+                    self.size.width as f32, 
+                    self.size.height as f32, 
+                    self.u_time
+                ])
+            );
+
+            for entity in &self.entities {
+                render_pass.set_vertex_buffer(0, entity.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(entity.index_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, entity.entity_buffer.slice(..));
+                render_pass.draw_indexed(
+                    0..entity.num_indices, 
+                    0, 
+                    0..entity.num_instances
+                );
+                //render_pass.draw(0..entity.num_vertices, 0..entity.num_instances);
+            }
+        }
+
+        // queue.submit...
+    }
+}
+```
+
+Great! Since we are using an index buffer, we no longer have to specify the vertex range (only the starting vertex) and we can instead just pass along the index range and instance range. The only thing left is to update the shape creation code to generate indices.
+
+```rust
+fn quad(width: f32) -> Shape {
+    let h = width / 2.0;
+    let nh = -1.0 * h;
+    Shape {
+        vertices: vec![
+            Vertex { pos: [nh, nh] },
+            Vertex { pos: [h, nh] },
+            Vertex { pos: [nh, h] },
+            Vertex { pos: [h, h] }
+        ],
+        indices: vec![
+            0, 1, 2,
+            2, 1, 3
+        ]
+    }
+}
+```
+
+The circle function is a bit more complex in that we need to use the last 3 indices once the current index > 1 as we step through creating the vertices for the circle. Other than this, the code is actually less than before!
+
+```rust
+fn circle(width: f32) -> Shape {
+    let radius = width / 2.0;
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
+    let step = 5.0;
+    let max_steps = 1 + (360.0 / step) as i32;
+    vertices.push(Vertex { pos: [0.0, 0.0] });
+    for i in 0..max_steps {
+        let degrees = (i as f32) * step;
+        let radians = degrees * std::f32::consts::PI / 180.0;
+        let x1 = radius * radians.cos();
+        let y1 = radius * radians.sin();
+        vertices.push(Vertex { pos: [x1, y1] });
+    }
+    for i in 0..vertices.len() {
+        if i > 1 {
+            indices.push(0 as u16);
+            indices.push((i - 1) as u16);
+            indices.push(i as u16);
+        }
+    }
+    Shape {
+        vertices: vertices,
+        indices: indices
+    }
+}
+```
+
+That's it! Let's make one minor adjustment to the fragment shader to perform a smooth step around the edges to give the appearance of a faded border. The **smoothstep** function is within a family of interpolation functions that will simply ensure that value provided is a gradient as it approaches the lower bound of the left edge, and 1 as it approaches the right edge. You can combine multiple smoothsteps, like in the fragment shader, to get a union/difference/intersection of the values to create some fun effects.
+
+```glsl
+#version 450
+
+layout(location=0) out vec4 f_color;
+layout(push_constant) uniform Locals {
+    vec2 u_resolution;
+    float u_time;
+};
+
+void main() {
+    vec2 st = gl_FragCoord.xy / u_resolution;
+    float x = smoothstep(0.01, 0.5, st.x) - smoothstep(0.5, 0.95, st.x);
+    float y = smoothstep(0.01, 0.5, st.y) - smoothstep(0.5, 0.95, st.y);
+    vec3 color = vec3(abs(sin(u_time)), abs(cos(u_time)), 0.4) * (x * y);
+    f_color = vec4(color, 1.0);
+}
+```
+
+![Indexed Drawing](/assets/wgpu-instance-draw-indexed.png)
+
+
+### Example: Update Particle Positions
+
+The rudimentary particle system we built in the previous example uses instancing to generate thousands of primitives on the screen but none of the particles are actually moving or responding to any kind of parameters. We can imagine a player primitive that would respond to input changes, or have built in flow fields so that particles can follow gravitational paths along the scene. 
+
+No matter the use case, the data associated with those changes needs to be updated to wherever that memory is allocated on the device. There are a few approaches to simulations, one of which involves creating a compute shader that can update uniform buffers in a feedback loop. For now, we're going to create an example that performs the calculations within the main code and passes along write updates to the appropriate instance buffer.
+
+```glsl
+#version 450
+
+layout(location=0) in vec2 pos;
+layout(location=1) in vec2 i_pos;
+layout(location=2) in float i_rot;
+
+mat2 rotate2d(float angle) {
+    return mat2(cos(angle), -sin(angle),
+        sin(angle), cos(angle));
+}
+
+void main() {
+    gl_Position = vec4(rotate2d(i_rot) * (pos + i_pos), 0.0, 1.0);
+}
+```
+
+For the most part, the shader code will remain unchanged from the previous example. Both the vertex shader and fragment shader are simply going to respond to the input passed to it and execute the appropriate stage by design. The vertex shader will receive vertex and instance data and transform the position appropriately.
+
+```glsl
+#version 450
+
+layout(location=0) out vec4 f_color;
+layout(push_constant) uniform Locals {
+    vec2 u_resolution;
+    float u_time;
+};
+
+void main() {
+    vec2 st = gl_FragCoord.xy / u_resolution;
+    float x = smoothstep(0.01, 0.5, st.x) - smoothstep(0.5, 0.95, st.x);
+    float y = smoothstep(0.01, 0.5, st.y) - smoothstep(0.5, 0.95, st.y);
+    vec3 color = vec3(abs(sin(u_time)), abs(cos(u_time)), 0.4) * (x * y);
+    f_color = vec4(color, 1.0);
+}
+```
+
+The fragment shader will simply perform the smooth step between the edges and use the time to animate the color for all the fragments for now. Next, in order to get the position data updated for each of the instances, we need to actually store all the instance data so that it can be updated!
+
+```rust
+struct Entity {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    entity_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    num_indices: u32,
+    num_instances: u32,
+    instances: Vec<EntityInstance>
+}
+```
+
+In order to write and store the **Vec** of **EntityInstance** we need to modify the way the buffer is created so that it can be written to later. To do this, we need to change the **spawn** function to include a [wgpu::BufferUsage::COPY_DST](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.COPY_DST) so that the buffer can be written to.
+
+```rust
+fn spawn(&mut self, shape: Shape, instances: Vec<EntityInstance>) {
+    self.entities.push(Entity {
+        vertex_buffer: self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&shape.vertices),
+                usage: wgpu::BufferUsage::VERTEX
+            }
+        ),
+        index_buffer: self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&shape.indices),
+                usage: wgpu::BufferUsage::INDEX
+            }
+        ),
+        entity_buffer: self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instances),
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST
+            }
+        ),
+        num_vertices: shape.vertices.len() as u32,
+        num_indices: shape.indices.len() as u32,
+        num_instances: instances.len() as u32,
+        instances: instances
+    });
+}
+```
+
+Then we can create a simple **update** function to iterate over the instances and make a change to the position data. Once we are done making those changes, we simply need to execute the [wgpu::Queue::write_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_buffer) to update the corresponding entity instance buffer.
+
+```rust
+fn update(&mut self) {
+    self.u_time = self.u_time + 0.001;
+    for entity in self.entities.iter_mut() {
+        for instance in entity.instances.iter_mut() {
+            let mut pos = instance.pos;
+            pos[0] = pos[0] + 0.0001;
+            pos[1] = pos[1] + 0.0001;
+            if pos[0] > 1.0 {
+                pos[0] = -1.0;
+            }
+            if pos[0] < -1.0 {
+                pos[0] = 1.0;
+            }
+            if pos[1] > 1.0 {
+                pos[1] = -1.0;
+            }
+            if pos[1] < -1.0 {
+                pos[1] = 1.0;
+            }
+            instance.pos = pos;
+        }
+        self.queue.write_buffer(
+            &entity.entity_buffer,
+            0,
+            bytemuck::cast_slice(&entity.instances)
+        );
+    }
+}
+```
+
+The update function will effectively iterate over the instances and entities, then make a small change to the position statically. We could store the velocity information on the instance as well, but for now this change will be done hard-coded. Additionally, if the position is outside the normalized bounds the position will be wrapped to the other side. This keeps the simulation running continuously without particles permanently leaving the screen. The only thing left that needs to be done is to make a call to the **update** function from within the event loop in **main**.
+
+```rust
+fn main() {
+    // ...setup input handling, event loop, window...etc
+    let mut state = block_on(RenderState::new(&window));
+
+    state.spawn(Shape::triangle(0.04), rand_instances(200));
+    state.spawn(Shape::quad(0.004), rand_instances(1000));
+    state.spawn(Shape::circle(0.02), rand_instances(100));
+
+    event_loop.run(move |event, _, control_flow| {
+        if input.update(&event) {
+            if input.key_released(VirtualKeyCode::Escape) || input.quit() {
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
+        }
+
+        state.update();
+
+        match event {
+            Event::RedrawRequested(_) => {
+                state.render();
+            },
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::Resized(physical_size) => {
+                    state.resize(physical_size);
+                },
+                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                    state.resize(*new_inner_size);
+                },
+                _ => {}
+            },
+            Event::MainEventsCleared => {
+                window.request_redraw();
+            },
+            _ => {}
+        }
+    });
+}
+```
+
+![Write Buffer Updates](/assets/wgpu-particles-moving-write-buffer.gif)
+
+## Bindings
+
+## Primitive 2D Games
+
+### Entity Component Systems
+
+We now have enough concepts to work with to build small-scale 2D games without any textures or sprites. These kind of games are built completely out of vertex primitives. In the classic Asteroids game, we can build a player out of a triangle, meteor rocks out of circles with deformations, and particles using quads or circle shapes. Examples up until now have been created in a single **main.rs** file. Before we get into the architecture of the game, let's go over a concept that we haven't heard about until now - ECS.
+
+### Pong
+
+### Asteroids
+
+### Breakout 
+
+### Invaders
+
+### Tetris
+
+## 6 Compute Shaders
+
+## 6. Textures
+
+## 4.7 Textures
 
 > Originally referred to as diffuse mapping, textures are simply image representation of pixels to be mapped for color (diffuse), normals, bump mapping, height maps, displacement, reflections, specular, occlusion, and various other techniques used in a materials system. [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html) is created by the [wgpu::Device::create_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_texture) described by a [wgpu::TextureDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDescriptor.html) including size, mip counts, sample counts, dimensions, [wgpu::TextureFormat](https://docs.rs/wgpu/0.6.0/wgpu/enum.TextureFormat.html) and [wgpu::TextureUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureUsage.html). 
 
@@ -1958,7 +2362,7 @@ When calling [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct
 
 Writing a texture to the queue effectively creates a single buffer (similar to `create_buffer_init` from before) that downstream operations will have access to when referring to the texture descriptors. A descriptor's usage (like a buffer's usage) can ensure that the texture can be used within a shader (or other various uses) and in this case be able to copy data to it. Additional setup is needed later one to use it with a **wgpu::TextureView** like we've seen in other operations.
 
-### 4.3 Sampler
+### 4.8 Sampler
 
 > [wgpu::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/struct.Sampler.html) defines how a pipeline will sample (i.e. given a pixel coordinate on or outside the texture boundaries - what color should be returned) from [wgpu::TextureView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureView.html) by defining image filters (e.g. anisotropy) and address (wrapping) modes (such as in the x, y, z directions), magnified filter, minimized filter - described by [wgpu::SamplerDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.SamplerDescriptor.html).
 
@@ -1991,9 +2395,33 @@ Additional properties such as the **mag_filter** and **min_filter** are handled 
 * **[wgpu::FilterMode::Linear](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Linear)** when magnified the textures are smooth but blury as it scales.
 * **[wgpu::FilterMode::Nearest](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Nearest)** when magnified pixels are sampled using nearest neighbor
 
-### 4.4 Bind Groups and Layouts
+### 4.9 Bind Groups and Layouts
 
-> In order to make use of resources (e.g. Textures, Samplers, Buffers) from within shaders we need a way to reference them. BindGroups and PipelineLayouts provide us with a mechanism for plugging in these resources. [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html) represents a set of resources bound to bindings described by a [wgpu::BindGroupLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayout.html). Use the [wgpu::Device::create_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group) to create a bind group.
+> In order to make use of other resources from within shaders we need a way to reference them. BindGroups and PipelineLayouts provide us with a mechanism for plugging in these resources. [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html) represents a set of resources bound to bindings described by a [wgpu::BindGroupLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayout.html). Use the [wgpu::Device::create_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group) to create a bind group.
+
+Recall from a previous section on shaders that there were multiple ways to pass around data within a shader. We can use a vertex buffer to bind in vertex or instance data into a vertex shader through the **layout(location=INDEX)** type layouts. Data can also be passed around between the shader stages with the **in** and **out** qualifiers. We also discussed the use of a **push_constant** uniform block that allowed us to pass in dynamic variables to a small reserved space of memory for simple indexes and small variables.
+
+One other way to get memory addressable data into a shader is through a **binding** layout. Consider the following vertex shader that needs to pass along **uniform** data unrelated to vertex or instance data.
+
+```glsl
+#version 450
+
+layout(location=0) in vec2 pos;
+layout(location=1) in vec2 i_pos;
+layout(location=2) in float i_rot;
+
+layout(set = 0, binding = 0) uniform Locals {
+    
+}
+
+mat2 rotate2d(float angle) {
+    return mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+}
+
+void main() {
+    gl_Position = vec4(rotate2d(i_rot) * (pos + i_pos), 0.0, 1.0);
+}
+```
 
 ```rust
 let texture_bind_group_layout = device.create_bind_group_layout(&wgpu:BindGroupLayoutDescriptor {
