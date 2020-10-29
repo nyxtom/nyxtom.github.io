@@ -1,20 +1,32 @@
 ---
 title: Rust Graphics Programming with WGPU
-published: false
+published: true
 book: true
 ---
 
 {% raw %}
 <style type="text/css">
 .hack h2 {
-    font-size: 1.4rem;
-    padding-top: 12rem;
+    font-size: 1.3rem;
+    border: dashed 10px #f9f9f9;
+    margin-top: 18rem;
+    margin-bottom: 9rem;
+    padding-top: 4rem;
+    padding-left: 3rem;
     padding-bottom: 4rem;
+    margin-left: -1rem;
+    width: calc(100% + 2rem);
 }
 .hack h3 {
-    font-size: 1.2rem;
-    padding: 2rem 1rem;
-    padding-top: 8rem;
+    font-size: 1.1rem;
+    padding: 3rem 1rem;
+    padding-top: 4rem;
+    padding-left: 3rem;
+    margin-top: 12rem;
+    border-top: dashed 4px #f4f4f4;
+    box-shadow: 2px -5px 10px rgba(0, 0, 0, 0.05);
+    margin-left: -0.5rem;
+    width: calc(100% + 1rem);
 }
 pre {
     margin-top: 3rem;
@@ -40,7 +52,7 @@ This guide is a deep dive into WGPU with a high level overview of shader program
 * TOC
 {:toc}
 
-## 0.1 Execution Order
+## Execution Order
 
 Graphics libraries closely follow hardware abstraction layers provided by modern graphics cards. Although, this is sometimes the other way around, where graphics libraries like Vulkan provide a spec and hardware vendors follow this spec to connect with underlying hardware graphics layers. Nevertheless, higher level graphics apis describe an execution order that tends to be very similar no matter what library you end up using.
 
@@ -51,7 +63,7 @@ Graphics libraries closely follow hardware abstraction layers provided by modern
 5. **Repeat 2-4** until close
 6. **Exit/Cleanup** finish remaining work on GPU, de-reference and cleanup resources before exiting
 
-## 0.2 Dependencies
+## Dependencies
 
 Throughout this book we will end up using a variety of dependencies to perform various tasks in [rust](https://rust-lang.org). The dependencies are meant to be as minimal as possible and are mentioned below:
 
@@ -76,7 +88,7 @@ shaderc = "0.6.2"
 nanorand = "0.4.4"
 ```
 
-## 0.3 Event Loop
+## Event Loop
 
 These dependencies follow into the sample code below for setting up a window with an event loop and handling events:
 
@@ -129,9 +141,9 @@ fn main() {
 
 Now let's get into some of the other definitions that we are working with.
 
-## 1 Initialization
+## Initialization
 
-### 1.1 Instance
+### Instance
 
 > Context for all other wgpu objects, the primary use of an Instance is to create **[wgpu::Adapter](https://docs.rs/wgpu/0.6.0/wgpu/struct.Adapter.html)** and **[wgpu::Surface](https://docs.rs/wgpu/0.6.0/wgpu/struct.Surface.html)**.
 
@@ -143,7 +155,7 @@ let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
 
 Note that [wgpu::BackendBit::Primary](https://docs.rs/wgpu/0.6.0/wgpu/struct.BackendBit.html) is referring to the backends that wgpu will use. Primary refers to first tier api support (Vulkan + Metal + DX12 + WebGPU) with secondary support for OpenGL + DX11. Since OpenGL/DX11 is still experimental, targeting through these backends may be unsupported in some areas. Use **PRIMARY** as the default but you can always just target a specific backend such as **wgpu::BackendBit::VULKAN** for instance.
 
-### 1.2 Surface
+### Surface
 
 > Platform specific surface (e.g. window, vk::Surface, texture back buffer, gpu canvas context) onto which a swap chain may receive a window handle and return back the internal surface for working with the next frame.
 
@@ -154,7 +166,7 @@ In `wgpu` this is referred to by creating a [wgpu::Surface](https://docs.rs/wgpu
 let surface = unsafe { instance.create_surface(window) };
 ```
 
-### 1.3 Adapter
+### Adapter
 
 > Handle to physical graphics and/or compute devices in order to open up a connection to the [wgpu::Device](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html) on the host system by using [wgpu::Adapter](https://docs.rs/wgpu/0.6.0/wgpu/struct.Adapter.html) [request_device](https://docs.rs/wgpu/0.6.0/wgpu/struct.Adapter.html#method.request_device) function.
 
@@ -169,7 +181,7 @@ let adapter = instance.request_adapter(
 ).await.unwrap();
 ```
 
-### 1.4 Logical Device
+### Logical Device
 
 > Open connection to a graphics and/or compute [wgpu::Device](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html). Responsible for the creation of most rendering and compute resources. Rendering and compute resources are used within commands and submitted to a queue. Provides all the necessary core functions of the API - creating graphics data structures like textures, buffers, queues, pipelines, etc. Same across modern graphics APIs, with Vulkan providing additional control over memory, and creating memory structures through a device.
 
@@ -188,7 +200,7 @@ let (device, queue) = adapter.request_device(
 ).await.unwrap();
 ```
 
-### 1.5 Swap Chain
+### Swap Chain
 
 > Object that effectively flips between different back buffers for a given surface window. Controls aspects of rendering such as refresh rate, back buffer swapping behavior. The swap chain can get the current frame by returning the **next texture** to be presented for drawing. [wgpu::SwapChain](https://docs.rs/wgpu/0.6.0/wgpu/struct.SwapChain.html) will return a [wgpu::SwapChainFrame](https://docs.rs/wgpu/0.6.0/wgpu/struct.SwapChainFrame.html) used in render pipeline attachments. When the frame is dropped the swapchain will present the texture to the associated [wgpu::Surface](https://docs.rs/wgpu/0.6.0/wgpu/struct.Surface.html).
 
@@ -241,7 +253,7 @@ fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
 }
 ```
 
-### 1.6 Command Encoder
+### Command Encoder
 
 > [wgpu::CommandEncoder](https://docs.rs/wgpu/0.6.0/wgpu/struct.CommandEncoder.html) records [wgpu::RenderPass](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html)es, [wgpu::ComputePass](https://docs.rs/wgpu/0.6.0/wgpu/struct.ComputePass.html)es, and transfer operations between driver managed resources like [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html)s and [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html)s. When finished recording, call [CommandEncoder::finish](https://docs.rs/wgpu/0.6.0/wgpu/struct.CommandEncoder.html#method.finish) to obtain a [wgpu::CommandBuffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.CommandBuffer.html) which may be submitted for execution to the GPU.
 
@@ -251,7 +263,7 @@ let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescri
 });
 ```
 
-### 1.7 Render Pass
+### Render Pass
 
 > [wgpu::RenderPass](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html) contains all the drawing methods used to begin recording commands via the [wgpu::CommandEncoder::begin_render_pass](https://docs.rs/wgpu/0.6.0/wgpu/struct.CommandEncoder.html#method.begin_render_pass). The [wgpu::RenderPassDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPassDescriptor.html) describes what color and depth attachments to attach to the given render pass. The render pass operates on a texture **attachment** and can provide a load/clear operation to it. This can additionally perform MSAA (multi-sample anti-aliasing) operations through the resolve_target for instance.
 
@@ -289,7 +301,7 @@ Once all operations to the render pass have been performed (whether that's [sett
 self.queue.submit(std::iter::once(encoder.finish()));
 ```
 
-### 1.8: Example: Clearing the Screen
+### Example: Clearing the Screen
 
 With just the above concepts alone, we have enough to:
 
@@ -475,9 +487,9 @@ impl RenderState {
 
 ![Clear Screen](/assets/rust-by-example-wgpu-clear.png)
 
-## 2 Shaders
+## Shaders
 
-### 2.1 Shader Modules
+### Shader Modules
 
 > Shader modules are represented typically by fragment, vertex, and compute shaders and are run against GPU Hardware Abstraction Layers (HAL) through an intermediary representation [SPIR-V](https://www.khronos.org/registry/spir-v/). [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) reflects SPIR-V in order to disassemble back into high level shading languages such as HLSL or Metal Shading Language (MSL).
 > 
@@ -527,7 +539,7 @@ You can also skip the compilation step if it's already been compiled into spirv 
 
 > Note: wgpu provides a macro for including spir-v directly with [wgpu::include_spirv!](https://docs.rs/wgpu/0.6.0/wgpu/macro.include_spirv.html) as in `wgpu::include_spirv("shader.vert.spv")`. To do this, you will need to add the build step to ensure that all required shader dependencies in the form of **.vert**, **.frag** or **.comp** are compiled with the [shaderc::Compiler](https://docs.rs/shaderc/0.6.2/shaderc/struct.Compiler.html).
 
-### 2.2 Render Pipeline
+### Render Pipeline
 
 Executing the shader module requires the use of a [wgpu::RenderPipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPipeline.html) as created with [wgpu::Device::create_render_pipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_render_pipeline) and passing along a [wgpu::RenderPipelineDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPipelineDescriptor.html) to describe all the different programmable stages, rasterization process, primitive topology, color states, depth stencil states, vertex states, and sampling settings.
 
@@ -640,7 +652,7 @@ Once a render pipeline has been setup, we can revisit the [wgpu::RenderPass](htt
 render_pass.set_pipeline(&self.render_pipeline);
 ```
 
-### 2.3 Draw Operations
+### Draw Operations
 
 In order to execute a render pipeline, according to its pipeline layout, we must call draw operations on that render pass. Draw operations vary with the simplest being [wgpu::RenderPass::draw](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.draw) which takes a range of vertices and range of instances. Other operations like [wgpu::RenderPass::draw_indexed](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderBundleEncoder.html#method.draw_indexed) take a range of indices, base vertex, and a range of instances that will draw indexed primitives using the active index buffer and active vertex buffers. It's important to note that **any** of the draw operations work according to what is currently active on the render pass. This includes:
 
@@ -671,7 +683,7 @@ In the above vertex shader example, we are making use of two reserved variables 
 render_pass.draw(0..3, 0..1);
 ```
 
-### 2.4 Shader Layout
+### Shader Layout
 
 With the [Vulkan Extension](https://github.com/KhronosGroup/GLSL/blob/master/extensions/khr/GL_KHR_vulkan_glsl.txt) to GLSL, and subsequently compiling GLSL to SPIR-V intermediate language, Vulkan adds a number of concepts to help with ways to describe the input/output/binding layouts of a shader. This comes in the form of [Descriptor Sets](https://github.com/KhronosGroup/GLSL/blob/master/extensions/khr/GL_KHR_vulkan_glsl.txt#L221) and provides qualifiers according to how the API will bind in data to mimic the pipeline layout described through the Vulkan API.
 
@@ -729,7 +741,7 @@ layout (location = INDEX) DIRECTION TYPE NAME;
 
 In later sections, we will discuss the use of **set**, **binding** and **push_constants** as they relate to more complex pipeline layout descriptors. For now, we will worry about the most basic set descriptor for passing variables between stages of the pipeline.
 
-### 2.5 Example: Draw a Triangle
+### Example: Draw a Triangle
 
 Before we move onto to more complex binding layouts, vertex buffers, textures, and samplers - with the above concepts alone we have enough to execute the most basic shader - **drawing a triangle**. 
 
@@ -905,9 +917,9 @@ impl RenderState {
 
 ![Draw Triangle Shader](/assets/wgpu-draw-triangle-shader.png)
 
-## 3 Shader Uniforms
+## Shader Uniforms
 
-### 3.1 GLSL Uniforms
+### GLSL Uniforms
 
 > A uniform is a global shader variable declared with the **uniform** qualifier. These are parameters that must be passed into the shader program during the pipeline execution. A uniform value does not change from one shader invocation to the next within a rendering call so they remain *uniform* among all invocations.
 
@@ -989,7 +1001,7 @@ void main() {
 }
 ```
 
-### 3.2 Push Constants
+### Push Constants
 
 As noted in the previous section, one method of assigning **uniform** data into a shader is to use a concept known as **push constants**. While, this method is not supported on WebGPU (for instance), it is a method that is used quite regularly to pass along small variables or indices used to describe dynamic offsets for memory backed resources. WGPU provides this native extension through the use of the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature that can setup at the time when device initialization occurs.
 
@@ -1034,7 +1046,7 @@ render_pass.set_push_constants(
 );
 ```
 
-### 3.3 Example: Set current timestep
+### Example: Set current timestep
 
 Using the **push_constant uniform** block and the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature in wgpu, we can create a simple example that passes along the current timestep and manipulate the fragment shader color in the process. This builds off of the same triangle example in a previous section.
 
@@ -1158,9 +1170,9 @@ impl RenderState {
 
 ![WGPU Push Constants](/assets/wgpu-uniform-pushconstant.gif)
 
-## 4 Resources
+## Buffers
 
-### 4.1 Buffers
+### Buffers
 
 > [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) is a blob of data created from the [Device::create_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_buffer) specifying a size, and [wgpu::BufferUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html) stored on the gpu to store anything from graph structures, structs, arrays, vertex data, index data. BufferUsage will limit operations performed on the buffer data and causes a *panic* to throw when used in any way not specified by **BufferInitDescriptor::usage**.
 
@@ -1169,16 +1181,12 @@ Using the [wgpu::Device](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html) it 
 ```rust
 use wgpu::DeviceExt;
 
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct Vertex {
     position: [f32; 3],
     color: [f32; 3]
 }
-
-// in order for bytemuck::cast_slice to work 
-// on a struct, we need two traits to be specified
-// bytemuck::Pod and bytemuck::Zeroable
-unsafe impl bytemuck::Pod for Vertex {}
-unsafe impl bytemuck::Zeroable for Vertex {}
 
 const VERTICES: &[Vertex] = &[
     Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
@@ -1217,7 +1225,7 @@ self.queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(VERTICES));
 self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 ```
 
-### 4.2 Buffer Usage
+### Buffer Usage
 
 > Note: [wgpu::BufferUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html) has a number of available options that can be combined with one another. The most common ones apply to the type of buffer the data represents such as Vertex, Index, Uniform, or Storage. These coorespond to the input processing in the case of vertex shaders and compute shaders, while uniform and storage refer to the shader uniform storage types.
 
@@ -1233,7 +1241,7 @@ In addition to these common uses, there are the uses that involve the [wgpu::Com
 
 Other use cases such as [wgpu::BufferUsage::MAP_READ](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.MAP_READ) refer to allowing a buffer to be read from or written to in the case of [wgpu::BufferUsage::MAP_WRITE](https://docs.rs/wgpu/0.6.0/wgpu/struct.BufferUsage.html#associatedconstant.MAP_WRITE). These scenarios typically involve being able to asynchronously read or write to a buffer that has already been allocated on the device.
 
-### 4.3 Vertex Buffers
+### Vertex Buffers
 
 > Vertex buffers are a type of rendering resource where the data consists of vertex attributes that can be configured to include any number of attribute data used in vertex processing. Vertex buffers may also be used with index buffers and primitive indicies in order to assemble rendering primitives such as triangle strips. Typically vertex buffers reside directly in graphics device memory rather than system memory so no additional memory transfers may need to occur (unless otherwise buffers are explicitly written to). 
 
