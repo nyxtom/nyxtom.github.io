@@ -100,7 +100,7 @@ fn movement_system(world: &mut World) {
 }
 ```
 
-The ability to query for entities that have both the position and speed components is really quite handy. hecs also has built in functions for doing more complex logic such as **with** / **without**. [bevy](https://github.com/bevyengine/bevy/blob/master/examples/ecs/ecs_guide.rs), by contrast has a bit more (until hecs adds support) boolean logic available such as **or** and **and** type queries. From what I can tell, howeveer, it looks like Bevy's ECS is actually a fork of hecs and upstream changes may be planned on being merged back into hecs itself (see [#issue 71](https://github.com/Ralith/hecs/issues/71))
+The ability to query for entities that have both the position and speed components is really quite handy. hecs also has built in functions for doing more complex logic such as **with** / **without**. [bevy](https://github.com/bevyengine/bevy/blob/master/examples/ecs/ecs_guide.rs), by contrast has a bit more (until hecs adds support) boolean logic available such as **or** and **and** type queries. From what I can tell, however, it looks like Bevy's ECS is actually a fork of hecs and upstream changes may be planned on being merged back into hecs itself (see [#issue 71](https://github.com/Ralith/hecs/issues/71))
 
 ## Conclusion
 
