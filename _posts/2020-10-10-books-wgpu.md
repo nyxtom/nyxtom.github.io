@@ -1,13 +1,16 @@
 ---
 title: Rust Graphics Programming with WGPU
-published: true
+published: false
 book: true
 ---
 
 {% raw %}
 <style type="text/css">
+.hack h1 {
+    font-size: 2rem;
+}
 .hack h2 {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     border: dashed 10px #f9f9f9;
     margin-top: 18rem;
     margin-bottom: 9rem;
@@ -18,7 +21,7 @@ book: true
     width: calc(100% + 2rem);
 }
 .hack h3 {
-    font-size: 1.1rem;
+    font-size: 1.3rem;
     padding: 3rem 1rem;
     padding-top: 4rem;
     padding-left: 3rem;
@@ -27,19 +30,6 @@ book: true
     box-shadow: 2px -5px 10px rgba(0, 0, 0, 0.05);
     margin-left: -0.5rem;
     width: calc(100% + 1rem);
-}
-pre {
-    margin-top: 3rem;
-    margin-bottom: 3rem;
-    margin-left: 1rem;
-    margin-right: 1rem;
-    background-color: #fbfbfb;
-    border: none;
-    border-radius: 8px;
-}
-.hack blockquote {
-    margin-top: 3rem;
-    margin-bottom: 3rem;
 }
 </style>
 {% endraw %}
@@ -75,6 +65,7 @@ Throughout this book we will end up using a variety of dependencies to perform v
 * [image](https://github.com/image-rs/image) image processing functions and methods for converting image formats
 * [shaderc](https://github.com/google/shaderc-rs) rust bindings for the collection of tools/libs for shader compilation
 * [nanorand](https://github.com/aspenluxxxy/nanorand-rs) zero-dependency library for random number generation
+* [rusttype](https://github.com/redox-os/rusttype) font retrieval and glyph calculations with font texture caching
 
 ```toml
 [dependencies]
@@ -82,17 +73,75 @@ winit = "0.23.0"
 winit_input_helper = "0.8.0"
 wgpu = "0.6.0"
 futures = "0.3.6"
-bytemuck = "1.4.1"
+bytemuck = { version = "1.4.1", features = ["derive"] }
 image = "0.23.10"
 shaderc = "0.6.2"
 nanorand = "0.4.4"
+rusttype = { version = "0.9.2", features = ["gpu_cache"] }
 ```
 
 ## Event Loop
 
-These dependencies follow into the sample code below for setting up a window with an event loop and handling events:
+The event loop is essential for any process that needs to interact with messages related to user interactions such as keyboard/mouse events, network traffic, system processing, timer activity, ipc communication, device control and general I/O communication. To do any of this, we need to go through the operating system and each type of operation is dependent on resources that the OS then abstracts over (such as hardware resources and peripheral implementations). 
 
-> Note: If you need a primer on what the event loop is, take a look at my post on [winit and rust](/2020/10/07/winit-rust/), you can also check out the in depth look at [epoll, kqueue, iocp explained with rust](https://cfsamsonbooks.gitbook.io/epoll-kqueue-iocp-explained/).
+In fact, you could consider every piece of hardware from the monitor, the GPU, the network card, to storage devices as all independent computers communicating over a network as scheduled by the operating system and CPU. Each operating system has its own implementation of performing blocking and non-blocking I/O. Consider that when we ask the OS to perform any kind of blocking operation, such as waiting for a particular file resource, the OS must suspend the thread that makes this call. Suspending the thread will stop executing code and store the CPU state in order to go on to process other operations.
+
+When data arrives for us through the network, the OS will wake up our thread again and resume operations. Non-blocking I/O by contrast will not suspend the thread that made the initial request and instead give it a handle which the thread can use to ask the OS if the event is ready or not. Asking the OS in this way is considered **polling**.
+
+Non-blocking I/O gives us more freedom at the cost of more frequent polling (such as in a loop), and this can take up CPU time. Each operating system has their own implementations for hooking into these polling and wait systems for events. In some cases, you can hook into the OS to wait for many events rather than being limited to waiting on one event per thread. The most common implementations make use of **epoll**, **kqueue**, and **IOCP**.
+
+In Rust, the most common crate for working with non-blocking I/O is through the [mio](https://crates.io/crates/mio) crate. mio provides the underlying platform specific extensions and is backed by epoll, kqueue, and IOCP. On top of **mio**, another common crate that is used for **window management** and multi-threaded event management is the [winit](https://github.com/rust-windowing/winit) crate.
+
+Winit provides all the core functionality needed to get started for a number of cross platform features:
+
+* Window Initialization
+* Window decorations
+* Resizing, resize snaps/increments
+* Transparency
+* Maximization, max toggling, minimization
+* Fullscreen, fullscreen toggling
+* MiDPI support
+* Popup / modal windows
+* Mouse events
+* Cursor icons, locking cursor
+* Touch events, touch pressure
+* Multitouch
+* Keyboard events
+* Drag/drop
+* Raw device events
+* Gamepad/joystick events
+* Device movement events
+
+**Winit** builds on top of **mio** to provide all these features and more while solving a number of multi-threaded issues in a cross-platform compatible way. The simplest example of building a window with an event loop in rust can be done in only a few lines of code.
+
+```rust
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
+use winit::window::WindowBuilder;
+
+fn main() {
+    let mut input = WinitInputHelper::new();
+
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("Rust by Example: WGPU!")
+        .build(&event_loop)
+        .unwrap();
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+            _ => {}
+        }
+    });
+}
+```
+
+Throughout the book we will make use of **winit** to build various examples. Additionally, we will use another crate [winit_input_helper](https://github.com/rukai/winit_input_helper) to update the current input state whenever keys, mouse events or anything else is processed within the event loop. Using the winit_input_helper will make sure we can perform simple state operation checks such as **key_pressed** or **key_released** and others without having to write our own input state management system.
 
 ```rust
 use winit::event::{Event, VirtualKeyCode, WindowEvent};
@@ -139,7 +188,7 @@ fn main() {
 }
 ```
 
-Now let's get into some of the other definitions that we are working with.
+Now that we have a bit of a better idea of the event loop and managing the input state as well as the window itself, we can move along to some of the other definitions that we are working with.
 
 ## Initialization
 
@@ -312,75 +361,193 @@ With just the above concepts alone, we have enough to:
 * **Begin encoding commands** to start work on render passes
 * **Submit our first operation** to clear the screen
 
+This book is designed to help you build off of previous examples and create some sense of reusability. In order to do this, we will need to setup a graphics library that will include the functionality necessary to perform all the event loop handling, render code, and standard setup code.
+
+To initialize a new library project:
+
+```bash
+cargo init wgpu-book --lib
+```
+
+This will create a directory with a single `src/lib.rs` file, a `Cargo.toml`, and a `Cargo.lock` file. Create a directory to store the examples with the following:
+
+```bash
+cd wgpu-book
+mkdir -p examples/clear
+touch examples/clear/main.rs
+```
+
+The examples directory will store each of the examples throughout this book. You can add an example to the project by updating the `Cargo.toml`.
+
+```toml
+[package]
+name = "wgpu-book"
+version = "0.1.0"
+authors = ["Thomas Holloway"]
+edition = "2018"
+
+[dependencies]
+...
+
+[[example]]
+name = "clear"
+path = "examples/clear/main.rs"
+```
+
+> Note: Refer to the previous section on dependencies for the list of versions used within this book. 
+
+Create a new file named `src/app.rs` to store the application builder. This code will include the setup code for running the event loop, creating a window, updating input state, and calls to the setup and rendering operations. We will build on this functionality to be able to pass anonymous functions that can be used to execute render code and setup resources.
+
+In order to separate the examples from the library code, we need a way to pass along functions that the event loop can call when render or update operations need to occur. These "system" functions will be stored on the **App** and passed along and executed at the various stages of the event loop.
+
+```rust
+use super::{RenderState, FrameContext};
+
+pub struct App {
+    update_systems: Vec<fn(&mut RenderState)>,
+    resource_systems: Vec<fn(&mut RenderState)>,
+    render_systems: Vec<fn(&mut RenderState, &mut FrameContext)>
+}
+
+impl App {
+    pub fn build() -> App {
+        let update_systems: Vec<fn(&mut RenderState)> = Vec::new();
+        let resource_systems: Vec<fn(&mut RenderState)> = Vec::new();
+        let render_systems: Vec<fn(&mut RenderState, &mut FrameContext)> = Vec::new();
+        App {
+            update_systems,
+            resource_systems,
+            render_systems
+        }
+    }
+}
+```
+
+For now, the **RenderState** and the **FrameContext** have not been defined, we will get to those in a moment. Next, to append functions to each of these vectors we need a few builder functions to add systems.
+
+```rust
+impl App {
+    // pub fn build() -> App {...}
+
+    pub fn add_resource(mut self, f: fn(&mut RenderState)) -> App {
+        self.resource_systems.push(f);
+        self
+    }
+
+    pub fn update_system(mut self, f: fn(&mut RenderState)) -> App {
+        self.update_systems.push(f);
+        self
+    }
+
+    pub fn system(mut self, f: fn(&mut RenderState, &mut FrameContext)) -> App {
+        self.render_systems.push(f);
+        self
+    }
+}
+```
+
+Now that each of these system vectors have been defined, we can iterate over them in the proper stage of the event loop or run initialization code.
+
 ```rust
 use futures::executor::block_on;
-
 use winit::event::{Event, VirtualKeyCode, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
-use winit_input_helper::WinitInputHelper;
+use winit::window::{WindowBuilder};
 
-fn main() {
-    let mut input = WinitInputHelper::new();
-
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("Rust by Example: WGPU!")
-        .build(&event_loop)
-        .unwrap();
-
-    let mut state = block_on(RenderState::new(&window));
-
-    event_loop.run(move |event, _, control_flow| {
-        if input.update(&event) {
-            if input.key_released(VirtualKeyCode::Escape) || input.quit() {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-        }
-
-        match event {
-            Event::RedrawRequested(_) => {
-                state.render();
-            },
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(physical_size) => {
-                    state.resize(physical_size);
-                },
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    state.resize(*new_inner_size);
-                },
-                _ => {}
-            },
-            Event::MainEventsCleared => {
-                window.request_redraw();
-            },
-            _ => {}
-        }
-    });
-}
+impl App {
+    // ...
+    pub fn run(self) {
+        let event_loop = EventLoop::new();
+        let window = WindowBuilder::new()
+            .with_title("Rust by Example: WGPU!")
+            .build(&event_loop)
+            .unwrap();
 ```
 
-Recall the code above that sets up the event loop, creates the window, updates the input state, and calls to our render state to either render or resize based on the correct window eventing. Next, we will setup the actual render state to encapsulate all of our initalization objects mentioned in the previous sections.
-
+The first part of the run code will capture the **App** as **self** so that the event loop can run on the main thread. After initializig the event loop, initialize the window with the **WindowBuilder** and pass along any relevant settings such as the title and the event loop.
 
 ```rust
-struct RenderState {
-    surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    sc_desc: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
-    size: winit::dpi::PhysicalSize<u32>
+        let mut state = block_on(RenderState::new(&window));
+```
+
+When we create the **RenderState** we will execute it as an async function. Because we are inside a non-async function, this will need to make use of the **futures** **block_on** to ensure this async function is completed before moving on. Next, we will need to iterate over the resource systems before starting the event loop. The event loop will need to **update input events**, **execute update systems**, **perform any rendering** or **resizing**, and finally **signal a redraw** or **exit**.
+
+```rust
+        // setup resources
+        for system in &self.resource_systems {
+            (system)(&mut state);
+        }
+```
+
+> Note: the event loop must be executed on the main thread, this is noted by the use of the **move** qualifier to transfer all scope on the main thread to this callback function.
+
+```rust
+        event_loop.run(move |event, _, control_flow| {
+            if state.input.update(&event) {
+                if state.input.key_released(VirtualKeyCode::Escape) || state.input.quit() {
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+            }
+
+            // update systems
+            for system in &self.update_systems {
+                (system)(&mut state);
+            }
+
+            match event {
+                Event::RedrawRequested(_) => {
+                    // render systems
+                    state.render(&self.render_systems);
+                },
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(physical_size);
+                    },
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        state.resize(*new_inner_size);
+                    },
+                    _ => {}
+                },
+                Event::MainEventsCleared => {
+                    window.request_redraw();
+                },
+                _ => {}
+            }
+        });
+    }
 }
 ```
 
-Within the **RenderState** implementation, we need to initialize each of these objects: **wgpu::Instance**, surface, **wgpu:Device**, **wgpu::Queue**, **wgpu::SwapChainDescriptor**, and **wgpu::SwapChain**.
+Note that the app builder code refers to a `RenderState` struct. The render state is used to store all objects that are of concern to the render loop. This includes the device, queue, surface, swap chain, swap chain descriptor, the size of the window, and the current input state. Create a new file `src/render_state.rs`.
+
+```rust
+use winit::window::Window;
+use winit_input_helper::WinitInputHelper;
+
+pub struct RenderState {
+    pub surface: wgpu::Surface,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub sc_desc: wgpu::SwapChainDescriptor,
+    pub swap_chain: wgpu::SwapChain,
+    pub size: winit::dpi::PhysicalSize<u32>
+    pub input: WinitInputHelper
+}
+```
+
+Within the **RenderState** implementation, we need to initialize each of these objects: **wgpu::Instance**, **wgpu::Surface**, **wgpu:Device**, **wgpu::Queue**, **wgpu::SwapChainDescriptor**, **wgpu::SwapChain** and the **WinitInputHelper**.
 
 ```rust
 impl RenderState {
-    async fn new(window: &Window) -> Self {
+    pub async fn new(window: &Window) -> Self {
+        let input = WinitInputHelper::new();
         let size = window.inner_size();
+```
+
+The initial **RenderState::new** function will build an input handler, store the size, and build all the necessary device initialization code mentioned in previous sections. We can later update this to accept varying settings and preferences but for now we will setup a few defaults.
+
+```rust
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance.request_adapter(
@@ -408,17 +575,21 @@ impl RenderState {
         };
 
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+```
 
+Once all initialization code has been done to retrieve a device, queue, swap chain, surface, and an instance of the api - we can return all this information into an initialized **RenderState**.
+
+```rust
         Self {
             surface,
             device,
             queue,
             sc_desc,
             swap_chain,
-            size
+            size,
+            input
         }
     }
-    
 }
 ```
 
@@ -428,61 +599,109 @@ Let's add the resize function mentioned previously to handle updating the swap c
 impl RenderState {
     // .. new
 
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
-
 }
 ```
 
-Finally, the **render** function can be implemented to grab the current frame, create a command encoder, begin a render pass and submit the command buffer to the queue.
+Note that the **App::run** render system functions refer to a **FrameContext**. On each render cycle, we need to use a swap chain frame texture, and a command encoder to encode draw operations. The **FrameContext** will be passed along to each of the render system functions within the **RenderState::render** function.
 
 ```rust
-impl RenderState {
-    // ..new...
+pub struct FrameContext {
+    pub frame: wgpu::SwapChainTexture,
+    pub encoder: wgpu::CommandEncoder
+}
 
-    // ..resize...
-    
-    fn render(&mut self) {
+impl RenderState {
+    // ...
+    pub fn render(&mut self, render_systems: &Vec<fn(&mut RenderState, &mut FrameContext)>) {
         let frame = self.swap_chain.get_current_frame()
             .expect("Timeout getting texture")
             .output;
 
-        let mut encoder = self.device.create_command_encoder(
+        let encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
-                label: Some("RENDER ENCODER") // label in graphics debugger
+                label: None,
             }
         );
 
-        {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &frame.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.9,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0
-                            }),
-                            store: true
-                        }
-                    }
-                ],
-                depth_stencil_attachment: None
-            });
-        }
+        let mut context = FrameContext {
+            frame,
+            encoder
+        };
 
+        for system in render_systems {
+            (system)(self, &mut context);
+        }
 
         // submit the commands to the queue!
         self.queue.submit(std::iter::once(encoder.finish()));
     }
 }
+```
+
+Excellent, now we update the `src/lib.rs` to simply export all of these **pub** functions and structs for the library. Open up the `src/lib.rs` and replace the code with a few exports of the library code. This will need to export the **FrameContext**, **App**, **RenderState**.
+
+```rust
+mod render_state;
+mod app;
+
+pub use render_state::*;
+pub use app::*;
+```
+
+Now we can update the `examples/clear/main.rs` to build a simple clear example. Many of the examples will create a separate **[example]_system.rs** to demonstrate that you can create multiple systems for the same application run sequence. To initiate a clear, we will need to construct a render pass and load with a clear operation as described in the previous sections. Add a new file `examples/clear/clear_system.rs`.
+
+```rust
+use wgpu_book::*;
+
+pub fn clear(_state: &mut RenderState, context: &mut FrameContext) {
+    let encoder = &mut context.encoder;
+    {
+        let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[
+                wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &context.frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.1,
+                            g: 0.4,
+                            b: 0.5,
+                            a: 1.0
+                        }),
+                        store: true
+                    }
+                }
+            ],
+            depth_stencil_attachment: None
+        });
+    }
+}
+```
+
+Note that the render pass takes advantage of the **FrameContext** to use the current frame and encoder. Now all that is left is to update the **examples/clear/main.rs** to load the **clear_system::clear** function when building the app and call **App::run**.
+
+```rust
+mod clear_system;
+
+use wgpu_book::*;
+
+fn main() {
+    App::build()
+        .system(clear_system::clear)
+        .run();
+}
+```
+
+To run an example (once it has been defined in the **Cargo.toml**) you can execute with:
+
+```bash
+cargo run --example clear
 ```
 
 ![Clear Screen](/assets/rust-by-example-wgpu-clear.png)
@@ -752,7 +971,25 @@ Before we move onto to more complex binding layouts, vertex buffers, textures, a
 * **Assign the render pipeline** by setting the render pipeline on the first render pass
 * **Call draw on the render pass** by passing along the vertices and instance(s)
 
-The vertex shader will be the same one we've seen in the previous sections. Namely, it will be a constant set of vertices that describe our triangle. In a file called `shader.vert` add the following code:
+The vertex shader will be the same one we've seen in the previous sections. Namely, it will be a constant set of vertices that describe our triangle. Shaders will need to be compiled and loaded as a resource, so we will take advantage of the **App:resource_systems** defined in the previous library example code. To start off, let's create a new example for triangle with:
+
+```bash
+mkdir -p examples/triangle
+touch examples/triangle/main.rs
+touch examples/triangle/triangle_system.rs
+touch examples/triangle/triangle.vert
+touch examples/triangle/triangle.frag
+```
+
+Then update the `Cargo.toml` to include this new example so that it can be executed.
+
+```toml
+[[example]]
+name = "triangle"
+path = "examples/triangle/main.rs"
+```
+
+In a file called `examples/triangle/triangle.vert` add the following code:
 
 ```glsl
 #version 450
@@ -760,7 +997,7 @@ The vertex shader will be the same one we've seen in the previous sections. Name
 const vec2 positions[3] = vec2[3](
     vec2(0.0, 0.5),
     vec2(-0.5, -0.5),
-    vec2(0.5, 0.5)
+    vec2(0.5, -0.5)
 );
 
 void main() {
@@ -770,7 +1007,7 @@ void main() {
 
 We make use of the **gl_VertexIndex** to select the right **vec2** in the **positions** array, then output the result to **gl_Position**.
 
-Next, the fragment shader will be the same as in the previous sections. It simply outputs the same color to the `location=0` output variable. As mentioned previously, this usually refers to the passed in current swap chain texture attached at the beginning of our render pass.
+Next, the fragment shader will be the same as in the previous sections. It simply outputs the same color to the `location=0` output variable. As mentioned previously, this usually refers to the passed in current swap chain texture attached at the beginning of our render pass. Add this code to `examples/triangle/triangle.frag` file.
 
 ```glsl
 #version 450
@@ -782,137 +1019,219 @@ void main() {
 }
 ```
 
-Recall that our previous code for setting up the state included creating everything from the instance, adapter, device, swap chain descriptor, and all the code from the winit event handling. Let's extend the **new** function to also setup the render pipeline we described earlier as well as loading our shader code. Using the same code from [demo - clearing the screen](#demo-18-clearing-the-screen), the following code will extend the **new** function to get the pipeline setup and load the shader code written previously.
-
-First, since we are going to use the render pipeline when we queue a render pass (within the **render** function). We need to store our render pipeline definition in the **RenderState**.
+Recall that our previous code for setting up the state included creating everything from the instance, adapter, device, swap chain descriptor, and all the code from the winit event handling. In order to load resources that will be accessible from the render system functions, we need a way to store all these resources into a hash map that can later be refered to by key. Let's expand the **RenderState** to include these **std::collections::HashMap** of resources to store both the pipeline and pipeline layouts. 
 
 ```rust
-struct RenderState {
-    // ..surface, device, queue, swap chain, size
-    render_pipeline: wgpu::RenderPipeline
+use std::collections::HashMap;
+
+use winit::window::Window;
+use winit_input_helper::WinitInputHelper;
+
+pub struct RenderState {
+    pub surface: wgpu::Surface,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub sc_desc: wgpu::SwapChainDescriptor,
+    pub swap_chain: wgpu::SwapChain,
+    pub size: winit::dpi::PhysicalSize<u32>,
+    pub input: WinitInputHelper,
+    pub pipelines: HashMap<String, wgpu::RenderPipeline>,
+    pub pipeline_layouts: HashMap<String, wgpu::PipelineLayout>,
+    pub compiler: shaderc::Compiler,
 }
 ```
 
-Next, we are going to import the **shader.vert** and **shader.frag** shaders, compile them with [shaderc::Compiler](https://docs.rs/shaderc/0.6.2/shaderc/struct.Compiler.html) and create a [wgpu::ShaderModule](https://docs.rs/wgpu/0.6.0/wgpu/struct.ShaderModule.html) with [wgpu::Device::create_shader_module](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_shader_module).
+In addition to the render pipelines and pipeline layouts, we will also store a **shaderrc::Compiler** so we can use that to compile shader source code into a **wgpu::ShaderModule**. Let's update the **new** function to initialize these hashmaps and the shader compiler now.
+
+> Note: we can optionally compile the shader source ahead of time as **.spirv** files and simply include them as shader modules instead of compiling them at runtime. For now, let's just include this here for the sake of convenience.
 
 ```rust
 impl RenderState {
-    async fn new(window: &Window) -> Self {
-        // .. instance, device, queue, swap chain code
-        let mut compiler = shaderc::Compiler::new().unwrap();
-        let vs_src = include_str!("shader.vert");
-        let fs_src = include_str!("shader.frag");
-        let vs_spirv = compiler.compile_into_spirv(
-            vs_src, 
-            shaderc::ShaderKind::Vertex, 
-            "shader.vert", 
-            "main", 
+    pub async fn new(window: &Window) -> Self {
+        // .. input, instance, size, device, queue...etc
+
+        let pipelines: HashMap<String, wgpu::RenderPipeline> = HashMap::new();
+        let pipeline_layouts: HashMap<String, wgpu::PipelineLayout> = HashMap::new();
+        let compiler = shaderc::Compiler::new().unwrap();
+
+        Self {
+            surface,
+            device,
+            queue,
+            sc_desc,
+            swap_chain,
+            size,
+            input,
+            pipelines,
+            pipeline_layouts,
+            compiler
+        }
+    }
+    // ..
+```
+
+The render state will store an instance of the [shaderc::Compiler](https://docs.rs/shaderc/0.6.2/shaderc/struct.Compiler.html). We can use this to create a small utility function to create a [wgpu::ShaderModule](https://docs.rs/wgpu/0.6.0/wgpu/struct.ShaderModule.html) with [wgpu::Device::create_shader_module](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_shader_module).
+
+```rust
+impl RenderState {
+    // ...
+    pub fn compile_shader(&mut self, kind: shaderc::ShaderKind, src: &str, name: &str) -> wgpu::ShaderModule {
+        let spirv = self.compiler.compile_into_spirv(
+            src,
+            kind,
+            name,
+            "main",
             None
         ).unwrap();
-        let fs_spirv = compiler.compile_into_spirv(
-            fs_src, 
-            shaderc::ShaderKind::Fragment, 
-            "shader.frag", 
-            "main", 
-            None
-        ).unwrap();
-        let vs_module = device.create_shader_module(
-            wgpu::util::make_spirv(&vs_spirv.as_binary_u8())
-        );
-        let fs_module = device.create_shader_module(
-            wgpu::util::make_spirv(&fs_spirv.as_binary_u8())
-        );
-        // ..
+        self.device.create_shader_module(
+            wgpu::util::make_spirv(&spirv.as_binary_u8())
+        )
     }
 }
+```
+
+We have updated the library to handle compiling shaders as well as storing [wgpu::RenderPipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPipeline.html) and [wgpu::PipelineLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayout.html) within resource associated hashmaps. The triangle example needs to create these resources during the initialization setup code as a **resource_system**. Within the **examples/triangle/triangle_system.rs** add a function to load and compile these shader sources.
+
+```rust
+use wgpu_book::*;
+
+pub fn load_shaders(state: &mut RenderState) {
+    let vs_module = state.compile_shader(
+        shaderc::ShaderKind::Vertex,
+        include_str!("triangle.vert"),
+        "triangle.vert"
+    );
+
+    let fs_module = state.compile_shader(
+        shaderc::ShaderKind::Fragment,
+        include_str!("triangle.frag"),
+        "triangle.frag"
+    );
 ```
 
 After creating the shader modules, a [wgpu::RenderPipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPipeline.html) must be created as described in the previous section using [wgpu::Device::create_render_pipeline](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_render_pipeline).
 
 ```rust
-// ..
-impl RenderState {
-    async fn new(window: &Window) -> Self {
-        // ..instance, device, queue, swap chain code
-        // ..load and compile shaders
-        let vs_module = // device.create_shader_module..
-        let fs_module = // device.create_shader_module..
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("pipeline layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[]
-            }
-        );
-
-        let render_pipeline = device.create_render_pipeline(
-            &wgpu::RenderPipelineDescriptor {
-                label: Some("pipeline"),
-                layout: Some(&render_pipeline_layout),
-                vertex_stage: wgpu::ProgrammableStageDescriptor {
-                    module: &vs_module,
-                    entry_point: "main"
-                },
-                fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                    module: &fs_module,
-                    entry_point: "main"
-                }),
-                rasterization_state: Some(
-                    wgpu::RasterizationStateDescriptor {
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: wgpu::CullMode::Back,
-                        depth_bias: 0,
-                        depth_bias_slope_scale: 0.0,
-                        depth_bias_clamp: 0.0,
-                        clamp_depth: false
-                    } 
-                ),
-                color_states: &[
-                    wgpu::ColorStateDescriptor {
-                        format: sc_desc.format,
-                        color_blend: wgpu::BlendDescriptor::REPLACE,
-                        alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                        write_mask: wgpu::ColorWrite::ALL
-                    }
-                ],
-                primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-                depth_stencil_state: None,
-                vertex_state: wgpu::VertexStateDescriptor {
-                    index_format: wgpu::IndexFormat::Uint16,
-                    vertex_buffers: &[]
-                },
-                sample_count: 1,
-                sample_mask: !0,
-                alpha_to_coverage_enabled: false
-            }
-        );
-
-        Self {
-            // ...surface, device, queue, sc_desc, swap_chain, size
-            render_pipeline
+    let layout = state.device.create_pipeline_layout(
+        &wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[]
         }
-    }
-    // ..resize, render
+    );
+```
+
+The render pipeline layout does not contain anything notable at this point. We are not using any bind group layouts and we are not yet passing along any push constant ranges with it. We will simply pass along this simple layout to the render pipeline creation.
+
+```rust
+    let pipeline = state.device.create_render_pipeline(
+        &wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&render_pipeline_layout),
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &vs_module,
+                entry_point: "main"
+            },
+            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                module: &fs_module,
+                entry_point: "main"
+            }),
+            rasterization_state: Some(
+                wgpu::RasterizationStateDescriptor {
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: wgpu::CullMode::Back,
+                    depth_bias: 0,
+                    depth_bias_slope_scale: 0.0,
+                    depth_bias_clamp: 0.0,
+                    clamp_depth: false
+                } 
+            ),
+            color_states: &[
+                wgpu::ColorStateDescriptor {
+                    format: sc_desc.format,
+                    color_blend: wgpu::BlendDescriptor::REPLACE,
+                    alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                    write_mask: wgpu::ColorWrite::ALL
+                }
+            ],
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            depth_stencil_state: None,
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[]
+            },
+            sample_count: 1,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false
+        }
+    );
+```
+
+> Note: the render pipeline parameters here largely are all defaults. Specifically, we would like the rasterization to use a **Ccw** (counter clock-wise) rendering of primitives and culling based on the back fact of primitives. The color states will primarily replace colors and alpha blending. Finally, the primitive topology will be a triangle list by default.
+
+Additionally, since the **load_shaders** function has access to the current **RenderState**, it can insert the pipeline, and pipeline layouts to the state. 
+
+```rust
+    state.pipelines.insert(String::from("triangle"), pipeline);
+    state.pipeline_layouts.insert(String::from("triangle"), layout);
 }
 ```
 
-The last step, is to update the **render** function to set the active render pipeline on the current render pass and call **draw** to draw the vertices of the triangle.
+Another **render_system** function can then refer to the `String::from("triangle")` resources inserted when executing a render pass to **draw** the vertices of the triangle.
 
 ```rust
-// ..
-impl RenderState {
-    // ..new, resize
-    fn render(&mut self) {
-        // .. get frame, create command encoder
-        {
-            let mut render_pass = // encoder.begin_render_pass...
+use wgpu_book::*;
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
-        }
-        // ..queue.submit
+pub fn load_shaders(state: &mut RenderState) {...}
+
+pub fn triangle(state: &mut RenderState, context: &mut FrameContext) {
+    let resource = String::from("triangle");
+    let encoder = &mut context.encoder;
+    {
+        let mut render_pass = encoder.begin_render_pass(
+            &wgpu::RenderPassDescriptor {
+                color_attachments: &[
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &context.frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0
+                            }),
+                            store: true
+                        }
+                    }
+                ],
+                depth_stencil_attachment: None
+            }
+        );
+
+        render_pass.set_pipeline(&state.pipelines.get(&resource).unwrap());
+        render_pass.draw(0..3, 0..1);
     }
 }
+```
+
+The last step needed is to build the **App** with these two system functions.
+
+```rust
+mod triangle_system;
+
+use wgpu_book::*;
+
+fn main() {
+    App::build()
+        .add_resource(triangle_system::load_shaders)
+        .system(triangle_system::triangle)
+        .run();
+}
+```
+
+```bash
+cargo run --example triangle
 ```
 
 ![Draw Triangle Shader](/assets/wgpu-draw-triangle-shader.png)
@@ -1050,10 +1369,113 @@ render_pass.set_push_constants(
 
 Using the **push_constant uniform** block and the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature in wgpu, we can create a simple example that passes along the current timestep and manipulate the fragment shader color in the process. This builds off of the same triangle example in a previous section.
 
-Within the **new** function during initialization, we need to update the logical device to include the push constants feature mentioned in the previous section, as well as specify the maximum push constant size in bytes.
+To setup another example to demonstrate how to work with push constants, create a new examples directory and import that into `Cargo.toml`.
+
+```bash
+mkdir -p examples/constants
+touch examples/constants/main.rs
+touch examples/constants/constants_system.rs
+touch examples/constants/constants.vert
+touch examples/constants/constants.frag
+```
+
+Import the **constants** example in the `Cargo.toml` so that it can be run.
+
+```toml
+[[example]]
+name = "constants"
+path = "examples/constants/main.rs"
+```
+
+Recall the implementation for the vertex shader in the previous example on drawing a triangle. The constants we are using in this example will not effect the vertex shader so we can copy that code over into **examples/constants/constants.vert**.
+
+```glsl
+#version 450
+
+const vec2 positions[3] = vec2[3](
+    vec2(0.0, 0.5),
+    vec2(-0.5, -0.5),
+    vec2(0.5, -0.5)
+);
+
+void main() {
+    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
+}
+```
+
+In the fragment shader (**examples/constants/constants.frag**), we will update it to include a new **layout(push_constant) uniform** block to allow us to specify a simple timestep float.
+
+```glsl
+#version 450
+
+layout(location=0) out vec4 f_color;
+layout(push_constant) uniform Uniforms {
+    float u_time;
+};
+
+void main() {
+    f_color = vec4(abs(sin(u_time)), abs(cos(u_time)), 0.4, 1.0);
+}
+```
+
+This fragment shader makes use of one of the many built-in functions in GLSL. Namely, [cos()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/cos.xhtml), [sin()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/sin.xhtml), and [abs()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/abs.xhtml) functions. Next, in our render pipeline - after loading these shader modules - we will make sure to specify that we want this **uniform block** to be available to the fragment shader and the bytes covered will be approximately **0..4** (matching a 32-bit float type: **f32**). Calling [wgpu::Device::create_pipeline_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_pipeline_layout) and specifying a [wgpu::PipelineLayoutDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayoutDescriptor.html#structfield.push_constant_ranges) to include our [wgpu::PushConstantRange](https://docs.rs/wgpu/0.6.0/wgpu/struct.PushConstantRange.html) will do this.
+
+> Note: Since the render pipeline will look largely the same as the triangle example, we can create a utility function to create a **wgpu::RenderPipeline** with all the default values we are interested in.
 
 ```rust
-// ...
+pub struct Pipeline<'a> {
+    pub vs_module: wgpu::ShaderModule,
+    pub fs_module: wgpu::ShaderModule,
+    pub layout: &'a wgpu::PipelineLayout
+}
+```
+
+We can create a simple struct to describe a pipeline by including the programmable shader modules and the initial **wgpu::PipelineLayout** reference. This will be helpful later when we need to additionally include other settings such as blend modes, vertex buffers, and rasterization settings other than the defaults.
+
+```rust
+
+impl RenderState {
+    // ...
+    pub fn create_render_pipeline(&mut self, pipeline: Pipeline) -> wgpu::RenderPipeline {
+        self.device.create_render_pipeline(
+            &wgpu::RenderPipelineDescriptor {
+                label: None,
+                layout: Some(&pipeline.layout),
+                vertex_stage: wgpu::ProgrammableStageDescriptor {
+                    module: &pipeline.vs_module,
+                    entry_point: "main"
+                },
+                fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                    module: &pipeline.fs_module,
+                    entry_point: "main"
+                }),
+                rasterization_state: None,
+                color_states: &[
+                    wgpu::ColorStateDescriptor {
+                        format: self.sc_desc.format,
+                        color_blend: wgpu::BlendDescriptor::REPLACE,
+                        alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                        write_mask: wgpu::ColorWrite::ALL
+                    }
+                ],
+                primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+                depth_stencil_state: None,
+                vertex_state: wgpu::VertexStateDescriptor {
+                    index_format: wgpu::IndexFormat::Uint16,
+                    vertex_buffers: &[]
+                },
+                sample_count: 1,
+                sample_mask: !0,
+                alpha_to_coverage_enabled: false
+            }
+        )
+    }
+}
+```
+
+However, in order to use any push constants within a render pipeline (as specified in a pipeline layout), the device must be initialized to require the [wgpu::Features::PUSH_CONSTANTS](https://docs.rs/wgpu/0.6.0/wgpu/struct.Features.html#associatedconstant.PUSH_CONSTANTS) feature. Within the **new** function during initialization, we need to update the logical device to include this push constants feature as well as specify the maximum push constant size in bytes.
+
+```rust
 impl RenderState {
     async fn new(window: &Window) -> Self {
         // ... size, instance, surface, adapter
@@ -1072,99 +1494,264 @@ impl RenderState {
     }
     // ..resize, render
 }
-// ...
 ```
 
-Next, during initialization the code setup a simple render pipeline layout that loaded the two shaders **shader.vert** and **shader.frag**. Recall the implementation for the **shader.vert** vertex shader.
 
-```glsl
-#version 450
-
-const vec2 positions[3] = vec2[3](
-    vec2(0.0, 0.5),
-    vec2(-0.5, -0.5),
-    vec2(0.5, -0.5)
-);
-
-void main() {
-    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-}
-```
-
-In the fragment shader, we will update it to include a new **layout(push_constant) uniform** block to allow us to specify a simple timestep float.
-
-```glsl
-#version 450
-
-layout(location=0) out vec4 f_color;
-layout(push_constant) uniform Uniforms {
-    float u_time;
-};
-
-void main() {
-    f_color = vec4(abs(sin(u_time)), abs(cos(u_time)), 0.4, 1.0);
-}
-```
-
-This fragment shader makes use of one of the many built-in functions in GLSL. Namely, [cos()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/cos.xhtml), [sin()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/sin.xhtml), and [abs()](https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/abs.xhtml) functions. Next, in our render pipeline - after loading these shader modules - we will make sure to specify that we want this **uniform block** to be available to the fragment shader and the bytes covered will be approximately **0..4** (matching a 32-bit float type: **f32**). Calling [wgpu::Device::create_pipeline_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_pipeline_layout) and specifying a [wgpu::PipelineLayoutDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.PipelineLayoutDescriptor.html#structfield.push_constant_ranges) to include our [wgpu::PushConstantRange](https://docs.rs/wgpu/0.6.0/wgpu/struct.PushConstantRange.html) will do this.
+Then in **constants_system.rs**, we can proceed to compile and load the shaders. Note that that the pipeline layout has changed to now include the push constant range for the fragment shader. The number of bytes specified will cover a single timestamp **f32**, or **4 bytes**.
 
 ```rust
-// ..
+// examples/constants/constants_system.rs
+use wgpu_book::*;
+
+pub fn load_shaders(state: &mut RenderState) {
+    let vs_module = state.compile_shader(
+        shaderc::ShaderKind::Vertex,
+        include_str!("constants.vert"),
+        "constants.vert"
+    );
+
+    let fs_module = state.compile_shader(
+        shaderc::ShaderKind::Fragment,
+        include_str!("constants.frag"),
+        "constants.frag"
+    );
+
+    let layout = state.device.create_pipeline_layout(
+        &wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[
+                wgpu::PushConstantRange {
+                    stages: wgpu::ShaderStage::FRAGMENT,
+                    range: 0..4
+                }
+            ]
+        }
+    );
+
+    let pipeline = state.create_render_pipeline(Pipeline {
+        vs_module,
+        fs_module,
+        layout: &layout
+    });
+
+    state.pipelines.insert(String::from("constants"), pipeline);
+    state.pipeline_layouts.insert(String::from("constants"), layout);
+}
+```
+
+Unfortunately, we do not yet have a way to store additional state resources in the **RenderState** or the application. Additional state objects may include entities, the current timestamp, or any number of variables that we are planning on updating with each iteration of the render loop. We can add this functionality to the **RenderState** by including a hash map of types to values.
+
+```rust
+use std::collections::HashMap;
+use std::any::{Any, TypeId};
+
+pub struct RenderState {
+    pub surface: wgpu::Surface,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub sc_desc: wgpu::SwapChainDescriptor,
+    pub swap_chain: wgpu::SwapChain,
+    pub size: winit::dpi::PhysicalSize<u32>,
+    pub input: WinitInputHelper,
+    pub pipelines: HashMap<String, wgpu::RenderPipeline>,
+    pub pipeline_layouts: HashMap<String, wgpu::PipelineLayout>,
+    pub compiler: shaderc::Compiler,
+    pub u_time: f32,
+    pub resources: HashMap<TypeId, Box<dyn Any>>
+}
+```
+
+The hash map stores a map of types to values where the values can be of **any** type. In this most basic implementation we can simple use a few generic functions to set and retrieve values mutably or by reference. There are a few edge cases here where the value may not necessarily exist, but for the time being we will simply unwrap to simplify things.
+
+```rust
 impl RenderState {
-    async fn new(window: &Window) -> Self {
-        // ... size, instance, surface, adapter, 
-        let (device, queue) = // adapter.request_device..
-        // .. swap chain, compile and load shaders
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("pipeline layout"),
-                bind_group_layouts: &[],
-                push_constant_ranges: &[
-                    &wgpu::PushConstantRange {
-                        stages: wgpu::ShaderStage::FRAGMENT,
-                        range: 0..4
+    // ...
+    pub fn add_resource<T>(&mut self, value: T)
+        where T : 'static {
+        self.resources.insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    pub fn resource<T>(&self) -> &T
+        where T : 'static {
+        let val = self.resources.get(&TypeId::of::<T>());
+        val.unwrap().downcast_ref::<T>().unwrap()
+    }
+
+    pub fn resource_mut<T>(&mut self) -> &mut T
+        where T : 'static {
+        let val = self.resources.get_mut(&TypeId::of::<T>());
+        val.unwrap().downcast_mut::<T>().unwrap()
+    }
+    // ...
+}
+```
+
+> Note: if any of this looks unfamiliar, the **Any** trait in the **std::any** crate specifies a number of different operations that can be used to "downcast" between the **Any** type and the intended type **T**. `downcast_ref` downcasts the unwrapped value into the specified type as a reference, while `downcast_mut` returns a mutable reference. We make use of the **std::collections::HashMap**'s built-in `get` and `get_mut` functions to correspond to these reference and mutable reference return values.
+
+Next, let's go ahead and revisit the **App** to be able to actually load these resources just before the event loop runs. Since the resources are only loaded just before the event loop runs, the functions that are executed (such as **load_shaders**) is only actually executed once. We can modify the **App** vectors to store **FnOnce** so that rust can guarantee that a move occurs and these functions can only be executed once.
+
+```rust
+pub struct App {
+    update_systems: Vec<Box<dyn Fn(&mut RenderState)>>,
+    load_systems: Vec<Box<dyn FnOnce(&mut RenderState)>>,
+    render_systems: Vec<Box<dyn Fn(&mut RenderState, &mut FrameContext)>>,
+}
+
+impl App {
+    pub fn build() -> App {
+        let update_systems: Vec<Box<dyn Fn(&mut RenderState)>> = Vec::new();
+        let load_systems: Vec<Box<dyn FnOnce(&mut RenderState)>> = Vec::new();
+        let render_systems: Vec<Box<dyn Fn(&mut RenderState, &mut FrameContext)>> = Vec::new();
+        App {
+            update_systems,
+            load_systems,
+            render_systems
+        }
+    }
+    //..
+}
+```
+
+We can then update the functions associated with the build operations to push these boxed values into the vectors. A **resource** function will allow us to add any **struct** object or value without having to wrap it in a system function.
+
+```rust
+impl App {
+    //..
+    pub fn add_resource<F>(mut self, f: F) -> App
+        where F : FnOnce(&mut RenderState) + 'static {
+        self.load_systems.push(Box::new(f));
+        self
+    }
+
+    pub fn resource<T>(self, t: T) -> App
+        where T : 'static {
+        self.add_resource(move |state: &mut RenderState| {
+            state.add_resource(t);
+        })
+    }
+
+    pub fn update_system<F>(mut self, f: F) -> App 
+        where F : Fn(&mut RenderState) + 'static {
+        self.update_systems.push(Box::new(f));
+        self
+    }
+    
+    pub fn system<F>(mut self, f: F) -> App
+        where F : Fn(&mut RenderState, &mut FrameContext) + 'static {
+        self.render_systems.push(Box::new(f));
+        self
+    }
+    //..
+}
+```
+
+> Note: notice that we are using a closure function in the **resource** function in order to modify the render state and add an additional resource object. Because we are using closures and not just function pointers, the vectors must be defined as function traits rather than function pointers. Defining the system vectors in this way allows us to pass along **either** function pointers or anonymous closures.
+
+Now that we have a few builder functions, the only thing left to do in **src/app.rs** is to iterate over the load systems and execute the appropriate functions once we have a built **RenderState**. Now that we are using **FnOnce**, the rust compiler makes sure that these functions will only be executed once. This means instead of iterating of the **load_systems** in a simple loop, we actually need to pop values off of the vector and execute them that way.
+
+```rust
+impl App {
+    // ..
+    pub fn run(mut self) {
+        let event_loop = EventLoop::new();
+        let window = WindowBuilder::new()
+            .build(&event_loop)
+            .unwrap();
+
+        let mut state = block_on(RenderState::new(&window));
+        while self.load_systems.len() > 0 {
+            let system = self.load_systems.pop().unwrap();
+            (system)(&mut state);
+        }
+
+        // event_loop.run...
+    }
+}
+```
+
+Unfortunately, since we have updated the vector of systems defined in the **App** struct, we also need to update the **RenderState::render** to be able to accept these boxed functions.
+
+```rust
+impl RenderState {
+    // ...
+    pub fn render(&mut self, render_systems: &Vec<Box<dyn Fn(&mut RenderState, &mut FrameContext)>>) {
+        // ...
+    }
+}
+```
+
+Now our graphics library fully supports storing any type of data and the **App** will handle loading those resources during the build and setup code. We can now proceed to actually setting up the state we would like to pass along and update in the **examples/constants/constants_system.rs**.
+
+```rust
+use wgpu_book::*;
+
+pub struct State {
+    pub u_time: f32
+}
+
+pub fn load_shaders(state: &mut RenderState) { ... }
+
+pub fn update(state: &mut RenderState) {
+    let s = state.resource_mut::<State>();
+    s.u_time += 0.01;
+}
+```
+
+Great! Now all we have to do is create a function the **constants_system.rs** to setup a render pass with a simple render pipeline (defined in the **load_shaders** function) as well assign the push constants to it using the [wgpu::RenderPass::set_push_constants](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_push_constants) function.
+
+```rust
+pub fn push_constants(state: &mut RenderState, context: &mut FrameContext) {
+    let resource = String::from("constants");
+    let encoder = &mut context.encoder;
+    {
+        let mut render_pass = encoder.begin_render_pass(
+            &wgpu::RenderPassDescriptor {
+                color_attachments: &[
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &context.frame.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: true
+                        }
                     }
-                ]
+                ],
+                depth_stencil_attachment: None
             }
-        )
-        let render_pipeline  = // device.create_render_pipeline..
+        );
 
-        let u_time: f32 = 0.0;
+        render_pass.set_pipeline(&state.pipelines.get(&resource).unwrap());
 
-        Self {
-            // ..surface, device, queue, sc desc, swap chain, size
-            render_pipeline,
-            u_time
-        }
+        let s = state.resource::<State>();
+        render_pass.set_push_constants(
+            wgpu::ShaderStage::FRAGMENT,
+            0,
+            bytemuck::cast_slice(&[s.u_time])
+        );
+
+        render_pass.draw(0..3, 0..1);
     }
-    // ..resize, render
 }
 ```
 
-Great! Now all we have to do is update our render pass code to actually update and push along our time variable using the [wgpu::RenderPass::set_push_constants](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_push_constants).
+Last thing for us to do is actually build the **App** itself and pass along these system functions and the initial state.
 
 ```rust
-// ...
-impl RenderState {
-    // ...new, resize
-    fn render(&mut self) {
-        // ..get frame, create command encoder
-        {
-            let mut render_pass = // encoder.begin_render_pass ...
+mod constants_system;
 
-            self.u_time = self.u_time + 0.01;
+use wgpu_book::*;
+use constants_system::State;
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_push_constants(
-                wgpu::ShaderStage::FRAGMENT,
-                0,
-                bytemuck::cast_slice(&[self.u_time])
-            );
-            render_pass.draw(0..3, 0..1);
-        }
-
-        // ..queue.submit
-    }
+fn main() {
+    App::build()
+        .resource(State {
+            u_time: 0.0
+        })
+        .add_resource(constants_system::load_shaders)
+        .update_system(constants_system::update)
+        .system(constants_system::push_constants)
+        .run();
 }
 ```
 
@@ -2250,6 +2837,8 @@ fn update(&mut self) {
 }
 ```
 
+> Note: In this example we are writing to the entire buffer for all of the instances - since every instance has changed. In some cases, you may want to only write to a portion of a given **wgpu::Buffer** (such as for only instances that have actually changed, or instances that are now invisible, visible..etc). The second parameter to [wgpu::Queue::write_buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_buffer) is the offset buffer address, so if you only wanted to update a single entity in a large memory space - that is an option.
+
 The update function will effectively iterate over the instances and entities, then make a small change to the position statically. We could store the velocity information on the instance as well, but for now this change will be done hard-coded. Additionally, if the position is outside the normalized bounds the position will be wrapped to the other side. This keeps the simulation running continuously without particles permanently leaving the screen. The only thing left that needs to be done is to make a call to the **update** function from within the event loop in **main**.
 
 ```rust
@@ -2295,33 +2884,13 @@ fn main() {
 
 ![Write Buffer Updates](/assets/wgpu-particles-moving-write-buffer.gif)
 
-## Bindings
+## Textures
 
-## Primitive 2D Games
-
-### Entity Component Systems
-
-We now have enough concepts to work with to build small-scale 2D games without any textures or sprites. These kind of games are built completely out of vertex primitives. In the classic Asteroids game, we can build a player out of a triangle, meteor rocks out of circles with deformations, and particles using quads or circle shapes. Examples up until now have been created in a single **main.rs** file. Before we get into the architecture of the game, let's go over a concept that we haven't heard about until now - ECS.
-
-### Pong
-
-### Asteroids
-
-### Breakout 
-
-### Invaders
-
-### Tetris
-
-## 6 Compute Shaders
-
-## 6. Textures
-
-## 4.7 Textures
+### Texture
 
 > Originally referred to as diffuse mapping, textures are simply image representation of pixels to be mapped for color (diffuse), normals, bump mapping, height maps, displacement, reflections, specular, occlusion, and various other techniques used in a materials system. [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html) is created by the [wgpu::Device::create_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_texture) described by a [wgpu::TextureDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDescriptor.html) including size, mip counts, sample counts, dimensions, [wgpu::TextureFormat](https://docs.rs/wgpu/0.6.0/wgpu/enum.TextureFormat.html) and [wgpu::TextureUsage](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureUsage.html). 
 
-WGPU provides the method to create the texture from the device, but in order to set the actual bytes of the texture you must pass that along to the queue via [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_texture).
+Creating a texture in wgpu can be done with the [wgpu::Device::create_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_texture) passing along a [wgpu::TextureDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDescriptor.html).
 
 ```rust
 let img = image::open("color-diffuse.png");
@@ -2340,7 +2909,36 @@ let diffuse_texture = device.create_texture(&wgpu::TextureDescriptor {
     usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
     label: Some("diffuse_texture")
 });
+```
 
+You will notice a number of properties on the texture descriptor that may sound unfamiliar. A texture typically describes a resource where the basic unit within the texture is a **texel**. A **texel** represents typically 1-4 components depending on the format provided. The [wgpu::TextureFormat](https://docs.rs/wgpu/0.6.0/wgpu/enum.TextureFormat.html) can be any wide variety of color channel variants with the most commonly used format as **Rgba8UnormSrgb**. 
+
+> Note: The most commonly used texture format **Rgba8UnormSrgb** represents red, green, blue and alpha channels with 8 bit integer per channel and Srgb-color 0-255 converted to/from a float 0-1 in shaders. You will find that all the available formats tend to follow (CHANNELS) (Bits Per Channel) (Signed/Unsigned/Normalized/Float/Int in Shader Representation).
+
+The [wgpu::TextureDimension](https://docs.rs/wgpu/0.6.0/wgpu/enum.TextureDimension.html) is represented by either a **1D**, **2D**, or **3D** texture. The dimension typically corresponds to the [wgpu::Extent3d](https://docs.rs/wgpu/0.6.0/wgpu/struct.Extent3d.html) with the added exception that you can use the **depth** value for **2D Texture Arrays** in addition to **3D Textures**.
+
+![Textures](/assets/wgpu-textures-2d-3d.png)
+
+The address space on a texture is most often in a vector coordinate **(u, v)** representing rows and columns. Whereas, the **w** is represented as either a particular slice of a texture array or the slice on a 3d texture. Additionally, textures typically have what is known as a **Level of Detail** or **LOD** **mipmap**. Each level of detail is represented by a smaller pixel space to be used for sampling in a graphics pipeline according to which filter properties have been set. Sampling a texture in a graphics pipepline will usually correspond to a [wgpu::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/struct.Sampler.html) and can only be used if the [wgpu::TextureUsage::SAMPLED](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureUsage.html#associatedconstant.SAMPLED) has been set on the texture descriptor.
+
+In a fragment shader, we can setup a texture (and sampler) according to how we plan on binding it in. The standard 2d texture corresponds to a **texture2D** uniform while a 2d texture array (where depth > 1 and the texture dimension is 2D) would correspond to **texture2DArray**.
+
+```glsl
+layout(location=0) in vec2 v_tex_coords;
+layout(location=0) out vec4 f_color;
+
+layout(set=0, binding=0) uniform texture2D t_diffuse; // 2d texture
+// layout(set=0, binding=0) uniform texture2D t_diffuse[]; // multiple textures
+layout(set=0, binding=1) uniform sampler s_diffuse;
+
+void main() {
+    f_color = texture(sampler2D(t_diffuse, s_diffuse), v_tex_coords);
+}
+```
+
+Once the description of the texture has been setup, you can write to the texture using the [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_texture) function. It is important to know that, similar to a [wgpu::Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html), the usage must also include [wgpu::TextureUsage::COPY_DST](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureUsage.html#associatedconstant.COPY_DST) in order to allow the texture address space to be written to via the **Queue**, or via the **CommandEncoder**.
+
+```rust
 queue.write_texture(
     wgpu::TextureCopyView {
         texture: &diffuse_texture,
@@ -2356,24 +2954,29 @@ queue.write_texture(
 );
 ```
 
-When calling [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_texture) you need to pass a wgpu::TextureCopyView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureCopyViewBase.html) to prepare a buffer image copy based on the [wgpu::TextureDataLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDataLayout.html) with offset (offset into buffer as the start of the texture), bytes per row (1 row of pixels in x direction, must be multiple of 256 unless using **copy_texture_to_buffer**), and rows per image.
+When calling [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_texture) you need to pass a [wgpu::TextureCopyView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureCopyViewBase.html) to prepare a buffer image copy based on the [wgpu::TextureDataLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureDataLayout.html) with offset (offset into buffer as the start of the texture), bytes per row (1 row of pixels in x direction, must be multiple of 256 unless using **copy_texture_to_buffer**), and rows per image.
 
-> Note: Many examples will use the [image](https://crates.io/crates/image) crate to process images for a wide variety of formats. A texture/image is loaded, and converted into a `Vec` of rgba bytes used when we pass it into the queue.write_texture.
+> Note: the **TextureCopyView** has a **mip_level**, this corresponds to the target mip level in the texture memory. Level of detail mip levels correspond to how the graphics pipeline will sample a **texel** from a texture and have that either be **nearest** or **linearly** 1-1 with the actual pixels on the screen. In a later section, we will go over level of detail and mip-mapping in greater detail.
 
-Writing a texture to the queue effectively creates a single buffer (similar to `create_buffer_init` from before) that downstream operations will have access to when referring to the texture descriptors. A descriptor's usage (like a buffer's usage) can ensure that the texture can be used within a shader (or other various uses) and in this case be able to copy data to it. Additional setup is needed later one to use it with a **wgpu::TextureView** like we've seen in other operations.
+After creating a texture, and later writing data to it, a corresponding [wgpu::TextureView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureView.html) is needed in order to be passed along to a render pipeline. The texture view can be created using the [wgpu::Texture::create_view](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html#method.create_view) by passing along a [wgpu::TextureViewDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureViewDescriptor.html).
 
-### 4.8 Sampler
+```rust
+texture.create_view(&wgpu::TextureViewDescriptor::default());
+```
+
+### Sampler
 
 > [wgpu::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/struct.Sampler.html) defines how a pipeline will sample (i.e. given a pixel coordinate on or outside the texture boundaries - what color should be returned) from [wgpu::TextureView](https://docs.rs/wgpu/0.6.0/wgpu/struct.TextureView.html) by defining image filters (e.g. anisotropy) and address (wrapping) modes (such as in the x, y, z directions), magnified filter, minimized filter - described by [wgpu::SamplerDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.SamplerDescriptor.html).
 
 Sampling occurs when the program provides a coordinate on the texture (texture coordinate) and needs to return a color back based on these configured parameters. When texture coordinates happen to outside of the texture (in the case of address wrapping) the following address wrapping modes are used:
+
+![AddressMode](/assets/wgpu-sampler-addressmode.png)
 
 * **[wgpu::AddressMode::ClampToEdge](https://docs.rs/wgpu/0.6.0/wgpu/enum.AddressMode.html#variant.ClampToEdge)** use the nearest pixel on the edges of the texture.
 * **[wgpu::AddressMode::Repeat](https://docs.rs/wgpu/0.6.0/wgpu/enum.AddressMode.html#variant.Repeat)** repeats the texture in a tiling fashion.
 * **[wgpu::AddressMode::MirrorRepeat](https://docs.rs/wgpu/0.6.0/wgpu/enum.AddressMode.html#variant.MirrorRepeat)** repeates a texture by mirroring it on every repeat (as in mirror when outside boundaries).
 
 ```rust
-let diffuse_texture_view = diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
 let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
     address_mode_u: wgpu::AddressMode::ClampToEdge,
     address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -2395,101 +2998,301 @@ Additional properties such as the **mag_filter** and **min_filter** are handled 
 * **[wgpu::FilterMode::Linear](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Linear)** when magnified the textures are smooth but blury as it scales.
 * **[wgpu::FilterMode::Nearest](https://docs.rs/wgpu/0.6.0/wgpu/enum.FilterMode.html#variant.Nearest)** when magnified pixels are sampled using nearest neighbor
 
-### 4.9 Bind Groups and Layouts
+### Bind Groups and Layouts
 
 > In order to make use of other resources from within shaders we need a way to reference them. BindGroups and PipelineLayouts provide us with a mechanism for plugging in these resources. [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html) represents a set of resources bound to bindings described by a [wgpu::BindGroupLayout](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayout.html). Use the [wgpu::Device::create_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group) to create a bind group.
 
 Recall from a previous section on shaders that there were multiple ways to pass around data within a shader. We can use a vertex buffer to bind in vertex or instance data into a vertex shader through the **layout(location=INDEX)** type layouts. Data can also be passed around between the shader stages with the **in** and **out** qualifiers. We also discussed the use of a **push_constant** uniform block that allowed us to pass in dynamic variables to a small reserved space of memory for simple indexes and small variables.
 
-One other way to get memory addressable data into a shader is through a **binding** layout. Consider the following vertex shader that needs to pass along **uniform** data unrelated to vertex or instance data.
+One other way to get memory addressable data into a shader is through a **binding** layout. In a fragment shader, we may want to sample colors from a texture resource using a particular sampling function. Both the **texture** and the **sampler** would need to be bound into the shader in order to use them.
 
 ```glsl
 #version 450
 
-layout(location=0) in vec2 pos;
-layout(location=1) in vec2 i_pos;
-layout(location=2) in float i_rot;
+layout(location=0) in vec2 tex_coords;
+layout(location=0) out vec4 f_color;
 
-layout(set = 0, binding = 0) uniform Locals {
-    
-}
-
-mat2 rotate2d(float angle) {
-    return mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
-}
+layout(set=0, binding=0) uniform texture2D tex;
+layout(set=0, binding=1) uniform sampler sam;
 
 void main() {
-    gl_Position = vec4(rotate2d(i_rot) * (pos + i_pos), 0.0, 1.0);
+    f_color = texture(sampler2D(tex, sam), tex_coords);
 }
 ```
 
-```rust
-let texture_bind_group_layout = device.create_bind_group_layout(&wgpu:BindGroupLayoutDescriptor {
-    entries: &[
-        wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderUsage::FRAGMENT,
-            ty: wgpu::BindingType::SampledTexture {
-                multisampled: false,
-                dimension: wgpu::TextureViewDimension::D2,
-                component_type: wgpu::TextureComponentType::Uint
-            },
-            count: None
-        },
-        wgpu::BindGroupLayoutEntry {
-            binding: 1,
-            visibility: wgpu::ShaderUsage::FRAGMENT,
-            ty: wgpu::BindingType::Sampler {
-                comparison: false,
-            },
-            count: None
-        }
-    ],
-    label: Some("texture_bind_group_layout")
-});
+A binding layout in a shader will correspond to a bind group layout in wgpu. The **set** in `layout(set=INDEX, binding=BINDING)` refers to the index passed along to the [wgpu::RenderPass:set_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_bind_group) while the **binding** refers to the [wgpu::BindGroupLayoutEntry::binding](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayoutEntry.html#structfield.binding). We can create a bind group layout with the [wgpu::Device::create_bind_group_layout](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group_layout) function. 
 
-let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+```rust
+let texture_bind_group_layout = device.create_bind_group_layout(
+    &wgpu:BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderUsage::FRAGMENT,
+                ty: wgpu::BindingType::SampledTexture {
+                    multisampled: false,
+                    dimension: wgpu::TextureViewDimension::D2,
+                    component_type: wgpu::TextureComponentType::Uint
+                },
+                count: None
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderUsage::FRAGMENT,
+                ty: wgpu::BindingType::Sampler {
+                    comparison: false,
+                },
+                count: None
+            }
+        ],
+        label: Some("texture_bind_group_layout")
+    }
+);
+```
+
+The [wgpu::BindGroupLayoutDescriptor](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayoutDescriptor.html) includes a number of [wgpu::BindGroupLayoutEntry](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroupLayoutEntry.html) entries. Because a bind group layout can be assigned to a particular render pipeline, each bind group layout entry must assign which [wgpu::ShaderStage](https://docs.rs/wgpu/0.6.0/wgpu/struct.ShaderStage.html) the binding is visible to. Finally, a bind group layout entry must specify the [wgpu::BindingType](https://docs.rs/wgpu/0.6.0/wgpu/enum.BindingType.html). Binding types can be of one of the following forms:
+
+* **[wgpu::BindingType::UniformBuffer](https://docs.rs/wgpu/0.6.0/wgpu/enum.BindingType.html#variant.UniformBuffer)** a [wgpu:Buffer](https://docs.rs/wgpu/0.6.0/wgpu/struct.Buffer.html) for uniform values.
+
+
+    ```glsl
+    layout(std140, binding = 0) uniform Globals {
+        mat4 view_proj;
+    }
+    ```
+
+* **[wgpu::BindingType::StorageBuffer](https://docs.rs/wgpu/0.6.0/wgpu/enum.BindingType.html#variant.StorageBuffer)** similar to the uniform buffer, however exposes additional properties that allow it to be quite a bit larger and can even be variable length in memory as opposed to fixed uniform buffers.
+
+    ```glsl
+    layout(set=0, binding=0) buffer storageBuffer {
+        vec4 elements[];
+    }
+    ```
+
+* **[wgpu::BindingType::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/enum.BindingType.html#variant.Sampler)** refers to a [wgpu::Sampler](https://docs.rs/wgpu/0.6.0/wgpu/struct.Sampler.html) and is used to sample a texture that is typically also bound in
+
+    ```glsl
+    layout(set=0, binding=1) uniform sampler s;
+    ```
+
+* **[wgpu::BindingType::SampledTexture](https://docs.rs/wgpu/0.6.0/wgpu/enum.BindingType.html#variant.SampledTexture)** refers to a [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html) where the **dimension** must match the texture view dimension of the texture.
+
+    ```glsl
+    layout(set=0, binding=0) uniform texture2D t;
+    // layout(set=0, binding=0) uniform texture2DArray tArray;
+    // layout(set=0, binding=0) uniform texture3D t3d;
+    ```
+
+> Note: when the bind group layout entry includes a **count** the corresponding binding type must be a sampled texture. This indicates that the binding is an array of textures. Typically you will see texture arrays include a count and the shader would include the array as such:
+>
+> ```glsl
+> layout(set=0, binding=0) uniform texture2D textures[2];
+> ```
+> 
+> The count can be specified explicitly in the shader, or it can be set without a constant as in:
+>
+> ```glsl
+> layout(set=0, binding=0) uniform texture2D textures[];
+> ```
+
+In any case, the bind group layout entries describe how each binding is defined according to the type, binding location, along with which shader stage it is visible to. Of course, since the layout is just a description, in order to actually get a resource onto the GPU we need to create a [wgpu::BindGroup](https://docs.rs/wgpu/0.6.0/wgpu/struct.BindGroup.html). We can use the [wgpu::Device::create_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.Device.html#method.create_bind_group) to generate a bind group that will be later used to assign onto a render pass with [wgpu::RenderPass::set_bind_group](https://docs.rs/wgpu/0.6.0/wgpu/struct.RenderPass.html#method.set_bind_group).
+
+```rust
+let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
     layout: &texture_bind_group_layout,
     entries: &[
         wgpu::BindGroupEntry {
             binding: 0,
-            resource: wgpu::BindingResource::TextureView(&diffuse_texture.view)
+            resource: wgpu::BindingResource::TextureView(&view)
         },
         wgpu::BindGroupEntry {
             binding: 1,
-            resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler)
+            resource: wgpu::BindingResource::Sampler(&sampler)
         }
     ]
 });
 ```
 
-## Rust Sections
+When you are ready to execute a render pipeline on a render pass, you can set your resources, vertex buffers, index buffers, pipeline, and finally the bind group. Setting the bind group needs to happen after you have set the render pipeline and typically may come before setting other resources. All draw operations **must** be queued after you've set the bind group and resources for a render pipeline for the ordering to be correct on the queue.
 
-### ranges
+```rust
+render_pass.set_bind_group(0, &self.bind_group, &[]);
+```
 
-### drop traits
+The set bind group function has 3 parameters including the **index**, the **bind group** itself, and a **dynamic offsets** array. The **index** in the first parameter refers to the same **set** index in the `layout(set=INDEX...`. The bind group is the same one that was created earlier with the **create_bind_group**. The dynamic offsets parameter will correspond to an offset into either a **UniformBuffer** or **StorageBuffer** that the render pipeline will use to read from.
 
-### mut
+> Note: Dynamic offsets can be especially useful if you have a large buffer that has been allocated (fixed size in the case of a uniform buffer, variable size in a storage buffer) and you need to read specific sets of data at a particular offset in that buffer. An example of this would be in the case of a large number of entities and all the transform matrix data was in that buffer for all of the entities.
 
-### &
+### Font Rendering
 
-### ranges
+Early days of font rendering typically involved extracting a particular character out of a texture known as a **bitmap font**. The bitmap font represents a collection of already rasterized images for each of the characters or glyphs of a particular font character set. Each glyph is dedicated to a specific region of the texture along with the cooresponding coordinates for that glyph. Bitmap fonts are relatively easy to implement since all the font glyphs are pre-rasterized, making the process efficient. The downside to this approach is that the glyphs do not scale very well and any time you want to use more characters or a different font you will need to recompile the bitmap. 
 
-### some, option, none
+These days, you can use a more modern library approach to load font families, render each of the glyph functions to a texture and use any number of adjusted font operations. One such library is known as [freetype](https://www.freetype.org/). 
 
-### structs, types
+> Freetype is used on a number of platforms as the font renderer including: Android, iOS, macOS (next to Apple Advanced Typography / CoreText), Playstation, Linux to name a few. Freetype has support for a number of font formats including TrueType and OpenType, PFR, PCF, PostScript, and BDF. Truetype and OpenType contain glyphs represented by a combination of functions and spline definitions. This allows fonts to be defined procedurally based on a preferred font height.
 
-### match
+In rust, we have a number of choices to implement font rendering. One alternative to freetype is a pure rust implementation known as [rusttype](https://gitlab.redox-os.org/redox-os/rusttype). Rusttype supports loading truetype font collections including opentype (**.otf** and **.ttf**). Glyphs are laid out horizontally using vertical and horizontal matrices with glyph-pair-specific kerning. The implementation appears to be based on an [analytic rasterization of curves with polynomial filters](http://josiahmanson.com/research/scanline_rasterization/) research paper to improve on vector graphics.
 
-### functions -> Self
+RustType also has a gpu cache implementation that allows you to maintain glyph renderings in a dynamic cache in GPU memory in order to minimize texture uploads per-frame. This allows draw call counts for text to remain especially low as all recently used glyphs are kept in a single GPU texture.
 
-### unwrap
+```rust
+let font_data: &[u8] = include_bytes!("Hack.ttf");
+let font: Font<'static> = rusttype::Font::try_from_bytes(font_data).unwrap();
+```
 
-### macros
+Loading in the font itself is as simple as creating a [rusttype::Font](https://docs.rs/rusttype/0.9.2/rusttype/enum.Font.html) and loading from the **try_from_bytes** function. In order to actually draw each individual glyph, it's important to understand how metrics are generally calculated based on the font height scale. This is done using the [rusttype::Scale](https://docs.rs/rusttype/0.9.2/rusttype/struct.Scale.html). The **Scale** defines the size of the rendered face, in pixels, horizontally and vertically. The vertical scale of **y** pixels is the distance between **ascent** and **descent**. 
 
-### move |
+![Glyph Metrics](/assets/wgpu-glyph-metrics.png)
 
-### u_time: f32 = 0.0
+Each of these metrics can be found in the api of rusttype. [rusttype::Font::v_metrics](https://docs.rs/rusttype/0.9.2/rusttype/enum.Font.html#method.v_metrics) provides the vertical metrics shared by all glyphs of the font. The vertical metrics will include **descent**, **ascent**, **line_gap** of which can be used to calculate the **"advance height"**.
 
-### *control_flow = 
+```rust
+let scale = rusttype::Scale::uniform(16.0);
+let v_metrics = self.font.v_metrics(scale);
+let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
+```
 
+Meanwhile, we can iterate over a string of characters and use the [rusttype::Font::glyph](https://docs.rs/rusttype/0.9.2/rusttype/enum.Font.html#method.glyph) to return a [rusttype::Glyph](https://docs.rs/rusttype/0.9.2/rusttype/struct.Glyph.html) object. Each glyph does not have an inherit scale associated with it, so additional operations must provide a size with [rusttype::Glyph::scaled](https://docs.rs/rusttype/0.9.2/rusttype/struct.Glyph.html#method.scaled) and [rusttype::ScaledGlyph::positioned](https://docs.rs/rusttype/0.9.2/rusttype/struct.ScaledGlyph.html#method.positioned) to offset with a position.
+
+```rust
+struct FontLayout {
+    font: rusttype::Font<'static>,
+    scale: rusttype::Scale,
+    max_width: i32
+}
+
+fn layout_glyphs(config: FontLayout, content: String) -> Vec<rusttype::PositionedGlyph<'static>> {
+    let v_metrics = config.font.v_metrics(config.scale);
+    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
+
+    let mut glyphs = vec![];
+    let mut caret = rusttype::point(0.0, v_metrics.ascent);
+    let mut last_glyph: Option<rusttype::GlyphId> = None;
+    for c in content.chars() {
+        let g = config.font.glyph(c).scaled(config.scale);
+        if let Some(last) = last_glyph {
+            // calculate kerning between two glyphs
+            caret.x += config.font.pair_kerning(config.scale, last, g.id());
+        }
+        let mut g = g.positioned(caret);
+        last_glyph = Some(g.id());
+
+        caret.x += g.unpositioned().h_metrics().advance_width;
+        glyphs.push(g);
+    }
+
+    glyphs
+}
+```
+
+In order to calculate the layout of a string of characters, each glyph needs to be positioned by the horizontal and vertical metrics. Horizontal metrics help us determine the **advance_width** to increment horizontally based on the uniform scaling provided by the font. A caret represented by a [rusttype::point](https://docs.rs/rusttype/0.9.2/rusttype/fn.point.html) is helpful for maintaining an incrementing position as we iterate over the characters. A pair of glyphs can also have **kerning** - an adjusted space between two character forms. Consider that mono-space fonts will have uniform spacing between any pair of characters - in this case the pair_kerning would be the same. 
+
+We can of course, modify this function to include the calculations to ensure that the current **caret** position is reset when the bounding box of a glyph is outside of the max_width using the [rusttype::PositionedGlyph::pixel_bounding_box](https://docs.rs/rusttype/0.9.2/rusttype/struct.PositionedGlyph.html#method.pixel_bounding_box). 
+
+```rust
+fn layout_glyphs(config: FontLayout, content: String) -> Vec<rusttype::PositionedGlyph<'static>> {
+    // ...
+    for c in content.chars() {
+        // ...
+        let mut g = g.positioned(caret);
+        last_glyph = Some(g.id());
+
+        if let Some(bb) = g.pixel_bounding_box() {
+            if config.max_width > 0 && bb.max.x > config.max_width {
+                caret = rusttype::point(0.0, caret.y + advance_height);
+                g.set_position(caret);
+                last_glyph = None;
+            }
+        }
+
+        caret.x += g.unpositioned().h_metrics().advance_width;
+        glyphs.push(g);
+    }
+
+    glyphs
+}
+```
+
+> Note that in this particular layout the characters will be positioned one after the other in a left-aligned paragraph style. Other layout types will need to consider how to align a string of characters that have other alignments such as centering, or right-alignment.
+
+Finally, let's add one additional change to ensure that control characters like new lines change the caret to the next line.
+
+```rust
+fn layout_glyphs(config: FontLayout, content: String) -> Vec<rusttype::PositionedGlyph<'static>> {
+    // ...
+    for c in content.chars() {
+        if c.is_control() {
+            match c {
+                '\n' => {
+                    caret = rusttype::point(0.0, caret.y + advance_height);
+                },
+                _ => {}
+            }
+            continue;
+        }
+
+        // ...
+    }
+
+   glyphs
+}
+```
+
+So far, we have loaded a font and generated a list of glyphs from a string, but we haven't yet rendered anything. The glyphs are merely representations of underlying functions and combinations of spline formulas based on the chosen font representation. In order to actually render anything we need to rasterize these chosen glyphs onto a cached texture. Rusttype provides a [rusttype::Cache](https://docs.rs/rusttype/0.9.2/rusttype/gpu_cache/struct.Cache.html) as a GPU memory available cache where we can take the data returned from a queued operation and write it to a texture.
+
+```rust
+let config = FontLayout {
+    font: font,
+    scale: rusttype::Scale::uniform(16.0),
+    max_width: 400
+};
+
+let content = String::from("Hello, world!");
+let glyphs = layout_glyphs(config, content);
+
+let mut cache = rusttype::gpu_cache::Cache::builder()
+    .dimensions(500, 500)
+    .multithread(true)
+    .build();
+
+for glyph in &glyphs {
+    cache.queue_glyph(0, glyph.clone());
+}
+```
+
+Beneath the layers of rusttype are several libraries that parse fonts into different outline builders and translate into path operations including line, curves, and move operations. Queuing a glyph to the GPU cache in this case will setup a queue of packed layout of glyphs in a LRU (least recently used) sort order. Actual rasterization of these glyphs doesn't yet occur until the cache is ready to be processed through the **cache_queued** callback function.
+
+```rust
+cache.cache_queued(|rect, data| {
+    queue.write_texture(
+        wgpu::TextureCopyView {
+            texture: texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: rect.min.x,
+                y: rect.min.y,
+                z: 0
+            }
+        },
+        data,
+        wgpu::TextureDataLayout {
+            offset: 0,
+            bytes_per_row: rect.width(),
+            rows_per_image: 0
+        },
+        wgpu::Extend3d {
+            width: rect.width(),
+            height: rect.height(),
+            depth: 1
+        }
+    );
+});
+```
+
+The **rect** passed along to the callback function here will be provided with the boundaries while the **data** consists of the pre-rasterized glyph data calculated from various curve, line, and move operations. Note that the dimensions of the cache should be enough to correspond to the varying glyphs that will be used **with font scaling**. This data can be passed along to a resource on the GPU such as a [wgpu::Texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Texture.html) using the [wgpu::Queue::write_texture](https://docs.rs/wgpu/0.6.0/wgpu/struct.Queue.html#method.write_texture) operation.
+
+### [Refactor] Rust Modules
+
+Up until this point all the examples have been written in a single `main.rs` file. In order to make things a bit easier to work with, we're going to refactor our project into modules and systems so that we can swap out any render pipeline or stage multiple render passes wherever we want.
+
+### Example: Fragment Shader Editor
