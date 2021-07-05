@@ -875,7 +875,7 @@ class App extends Component {
 render(<App />, document.getElementById('root'));
 ```
 
-Alternatively, isntead of creating a new **ServiceLocator** and calling **register** for each of the keys, we can directly pass in the map.
+Alternatively, instead of creating a new **ServiceLocator** and calling **register** for each of the keys, we can directly pass in the map.
 
 ```javascript
 import { render, Component } from 'react';
